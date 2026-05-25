@@ -1,0 +1,125 @@
+// hooks/useTauri.ts — Typed wrappers around @tauri-apps/api invoke calls.
+
+import { invoke } from "@tauri-apps/api/core";
+import {
+  AppConfig,
+  BatchScanResult,
+  Event,
+  ExportFilter,
+  Participant,
+  ParticipantFilter,
+  ParticipantInput,
+  ReportData,
+  ScanResult,
+} from "../types";
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+export const getEvents = (fy?: string, region?: string) =>
+  invoke<Event[]>("get_events", { fy, region });
+
+export const createEvent = (input: {
+  title: string;
+  date: string;
+  region: string;
+  venue?: string;
+  notes?: string;
+}) => invoke<Event>("create_event", { input });
+
+export const deleteEvent = (eventId: string) =>
+  invoke<boolean>("delete_event", { eventId });
+
+export const getFinancialYears = () =>
+  invoke<string[]>("get_financial_years");
+
+// ── Participants ──────────────────────────────────────────────────────────────
+
+export const getParticipants = (filter: ParticipantFilter) =>
+  invoke<Participant[]>("get_participants", { filter });
+
+export const saveParticipants = (eventId: string, rows: ParticipantInput[]) =>
+  invoke<number>("save_participants", { eventId, rows });
+
+export const updateParticipant = (participantId: string, input: ParticipantInput) =>
+  invoke<boolean>("update_participant", { participantId, input });
+
+export const deleteParticipant = (participantId: string) =>
+  invoke<boolean>("delete_participant", { participantId });
+
+// ── Scanning ──────────────────────────────────────────────────────────────────
+
+export type BatchScanItem = {
+  itemId: string;
+  eventId: string;
+  imageBytes: number[];
+  filename: string;
+};
+
+export const scanSheet = (
+  eventId: string,
+  imageBytes: number[],
+  filename: string,
+  method: "auto" | "online" | "offline" = "auto"
+) => invoke<ScanResult>("scan_sheet", { eventId, imageBytes, filename, method });
+
+export const scanBatch = (
+  items: BatchScanItem[],
+  method: "auto" | "online" | "offline" = "auto"
+) => invoke<BatchScanResult>("scan_batch", { items, method });
+
+export const checkConnectivity = () => invoke<boolean>("check_connectivity");
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+export const getReport = (financialYear: string) =>
+  invoke<ReportData>("get_report", { financialYear });
+
+// ── Export ────────────────────────────────────────────────────────────────────
+
+export const exportExcel = (filter: ExportFilter, path: string) =>
+  invoke<boolean>("export_excel", { filter, path });
+
+export const exportCsv = (filter: ExportFilter, path: string) =>
+  invoke<boolean>("export_csv", { filter, path });
+
+// ── Config ────────────────────────────────────────────────────────────────────
+
+export const getConfig = () => invoke<AppConfig>("get_config");
+
+export const saveConfig = (config: AppConfig) =>
+  invoke<boolean>("save_config", { config });
+
+export const backupDatabase = (destinationPath: string) =>
+  invoke<boolean>("backup_database", { destinationPath });
+
+export const restoreDatabase = (sourcePath: string) =>
+  invoke<boolean>("restore_database", { sourcePath });
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export const authLogin = (username: string, password: string) =>
+  invoke<any>("login", { input: { username, password } });
+
+export const authLogout = () => invoke<boolean>("logout");
+
+export const getSessionUser = () => invoke<any>("get_session");
+
+export const setupProfile = (input: {
+  newUsername: string; newPassword: string; fullName: string;
+  email: string; phone: string; idNumber: string;
+}) => invoke<any>("setup_profile", { input });
+
+export const getUsers = () => invoke<any[]>("get_users");
+
+export const createUser = (input: {
+  username: string; password: string; role: string;
+  fullName?: string; email?: string; phone?: string; idNumber?: string;
+}) => invoke<any>("create_user", { input });
+
+export const deleteUser = (userId: string) => invoke<boolean>("delete_user", { userId });
+
+export const setUserRole = (userId: string, role: string) =>
+  invoke<boolean>("set_user_role", { userId, role });
+
+export const resetUserPassword = (userId: string, newPassword: string) =>
+  invoke<boolean>("reset_user_password", { userId, newPassword });

@@ -1,0 +1,59 @@
+[package]
+name = "kibt-ams"
+version = "2.0.0"
+description = "KIBT Attendance Management System"
+authors = ["KIBT ICT Department"]
+edition = "2021"
+
+[lib]
+name = "kibt_ams_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri core
+tauri = { version = "2", features = ["devtools"] }
+
+# Tauri plugins
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-updater = "2"
+
+# Serialisation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Async / HTTP
+tokio = { version = "1", features = ["full"] }
+
+# Utilities
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+bcrypt = "0.15"
+thiserror = "1"
+
+# OS keychain (API key storage)
+keyring = { version = "2", features = ["default"] }
+
+# Image processing (pure Rust — for future preprocessing)
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
+
+# Excel export (pure Rust — no native libs required)
+rust_xlsxwriter = "0.79"
+
+[features]
+default = []
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
