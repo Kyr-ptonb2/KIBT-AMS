@@ -14,6 +14,7 @@ import Export from "./pages/Export";
 import Settings from "./pages/Settings";
 import UserManagement from "./pages/UserManagement";
 import LogsPage from "./pages/LogsPage";
+import ImportParticipants from "./pages/ImportParticipants";
 import { useStore } from "./store";
 import { checkConnectivity, getConfig, getFinancialYears } from "./hooks/useTauri";
 import ToastContainer from "./components/ToastContainer";
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="settings"     element={<AdminOnly><Settings /></AdminOnly>} />
             <Route path="users"        element={<AdminOnly><UserManagement /></AdminOnly>} />
             <Route path="logs"         element={<AdminOnly><LogsPage /></AdminOnly>} />
+            <Route path="import"       element={<ImportParticipants />} />
           </Route>
         </Routes>
         <ToastContainer />

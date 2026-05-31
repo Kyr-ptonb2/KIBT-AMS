@@ -151,7 +151,7 @@ export default function Dashboard() {
                     <div key={ev.id} className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-gray-50">
                       <div>
                         <p className="text-sm font-medium text-gray-800">{ev.title}</p>
-                        <p className="text-xs text-gray-500">{ev.region} · {ev.date}</p>
+                        <p className="text-xs text-gray-500">{ev.region} · {ev.startDate}</p>
                       </div>
                       <div className="text-right">
                         <span className="text-sm font-semibold text-gray-700">{ev.participantCount ?? 0}</span>

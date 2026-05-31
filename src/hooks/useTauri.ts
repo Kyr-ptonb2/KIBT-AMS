@@ -9,6 +9,7 @@ import {
   Participant,
   ParticipantFilter,
   ParticipantInput,
+  QueueItemInput,
   ReportData,
   ScanResult,
 } from "../types";
@@ -20,11 +21,13 @@ export const getEvents = (fy?: string, region?: string) =>
 
 export const createEvent = (input: {
   title: string;
-  date: string;
+  startDate: string;
+  endDate: string;
   region: string;
   venue?: string;
+  eventType?: string;
   notes?: string;
-}) => invoke<Event>("create_event", { input });
+}) => invoke<any>("create_event", { input });
 
 export const deleteEvent = (eventId: string) =>
   invoke<boolean>("delete_event", { eventId });
@@ -48,13 +51,6 @@ export const deleteParticipant = (participantId: string) =>
 
 // ── Scanning ──────────────────────────────────────────────────────────────────
 
-export type BatchScanItem = {
-  itemId: string;
-  eventId: string;
-  imageBytes: number[];
-  filename: string;
-};
-
 export const scanSheet = (
   eventId: string,
   imageBytes: number[],
@@ -63,7 +59,7 @@ export const scanSheet = (
 ) => invoke<ScanResult>("scan_sheet", { eventId, imageBytes, filename, method });
 
 export const scanBatch = (
-  items: BatchScanItem[],
+  items: QueueItemInput[],
   method: "auto" | "online" | "offline" = "auto"
 ) => invoke<BatchScanResult>("scan_batch", { items, method });
 
@@ -123,3 +119,25 @@ export const setUserRole = (userId: string, role: string) =>
 
 export const resetUserPassword = (userId: string, newPassword: string) =>
   invoke<boolean>("reset_user_password", { userId, newPassword });
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+export const getEventSessions = (eventId: string) =>
+  invoke<any[]>("get_event_sessions", { eventId });
+
+export const createSession = (input: {
+  eventId: string; title?: string; date: string;
+  startTime?: string; endTime?: string; region?: string; venue?: string;
+}) => invoke<any>("create_session", { input });
+
+export const deleteSession = (sessionId: string) =>
+  invoke<boolean>("delete_session", { sessionId });
+
+export const getEventStats = (eventId: string) =>
+  invoke<any>("get_event_stats", { eventId });
+
+// ── Import ────────────────────────────────────────────────────────────────────
+export const importParticipants = (
+  eventId: string,
+  sessionId: string | null,
+  rows: any[]
+) => invoke<number>("import_participants", { eventId, sessionId, rows });

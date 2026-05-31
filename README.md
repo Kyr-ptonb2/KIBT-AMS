@@ -264,5 +264,3 @@ A large vision model (Moondream2, LLaVA) cannot run on 4 GB — this is why Open
 ---
 
 *KIBT ICT Department · Ministry of Cooperatives and MSME Development · Kenya*
-# KIBT-AMS
-# KIBT-AMS

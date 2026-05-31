@@ -47,7 +47,11 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-dev", "libtesseract-dev", "libopencv-dev"]
+        "depends": [
+          "libwebkit2gtk-4.1-dev",
+          "libtesseract-dev",
+          "libopencv-dev"
+        ]
       }
     },
     "resources": []

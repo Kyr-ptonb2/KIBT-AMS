@@ -30,9 +30,9 @@ struct ExportRow {
     age_category: Option<String>,
     gender: Option<String>,
     phone: Option<String>,
-    consent: Option<String>,
     location: Option<String>,
     extra_fields: Option<String>,
+    consent: Option<String>,
     added_at: String,
 }
 
@@ -46,7 +46,7 @@ fn fetch_rows(state: &AppDataDir, filter: &ExportFilter) -> Result<Vec<ExportRow
     let conn = open(&state.0)?;
 
     let mut sql = String::from(r#"
-        SELECT e.title, e.date, e.region, e.venue, e.financial_year,
+        SELECT e.title, COALESCE(e.start_date, e.created_at) AS date, e.region, e.venue, e.financial_year,
                p.name, p.business_type, p.age_category, p.gender, p.phone,
                p.location, p.extra_fields, p.consent, p.added_at
         FROM participants p
@@ -67,7 +67,7 @@ fn fetch_rows(state: &AppDataDir, filter: &ExportFilter) -> Result<Vec<ExportRow
         sql.push_str(" AND e.id = ?");
         bind_vals.push(eid.clone());
     }
-    sql.push_str(" ORDER BY e.date DESC, e.id, p.added_at");
+    sql.push_str(" ORDER BY COALESCE(e.start_date, e.created_at) DESC, e.id, p.added_at");
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
@@ -154,7 +154,7 @@ pub fn export_excel(
     }
 
     // ── Column widths ─────────────────────────────────────────────────────────
-    let widths = [30.0_f64, 14.0, 16.0, 20.0, 14.0, 30.0, 20.0, 14.0, 10.0, 18.0, 10.0, 22.0];
+    let widths = [30.0_f64, 14.0, 16.0, 20.0, 14.0, 30.0, 20.0, 14.0, 10.0, 18.0, 15.0, 10.0, 15.0, 14.0];
     for (col, &w) in widths.iter().enumerate() {
         sheet.set_column_width(col as u16, w).map_err(|e| e.to_string())?;
     }

@@ -30,6 +30,7 @@ export default function ScanSheet() {
 
   const [mode, setMode] = useState<ScanMode>("single");
   const [selectedEventId, setSelectedEventId] = useState<string>(searchParams.get("event") ?? "");
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(searchParams.get("session") ?? "");
 
   // Single scan state
   const [singleFile, setSingleFile] = useState<File | null>(null);
@@ -228,11 +229,19 @@ export default function ScanSheet() {
               <option value="">— Choose an event —</option>
               {events?.map((ev) => (
                 <option key={ev.id} value={ev.id}>
-                  {ev.region} · {ev.date} · {ev.title}
+                  {ev.region} · {ev.startDate} · {ev.title}
                 </option>
               ))}
             </select>
           </div>
+          {/* Session selector */}
+          {selectedEventId && (
+            <SessionSelector
+              eventId={selectedEventId}
+              value={selectedSessionId}
+              onChange={setSelectedSessionId}
+            />
+          )}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden">
             {(["single", "batch"] as ScanMode[]).map((m) => (
               <button
@@ -629,4 +638,28 @@ function ReviewTable({
 
 function emptyRow(): ParticipantInput {
   return { name: "", businessType: "", ageCategory: "", gender: "", phone: "", consent: "No" };
+}
+
+function SessionSelector({ eventId, value, onChange }: {
+  eventId: string; value: string; onChange: (v: string) => void;
+}) {
+  const { data: sessions } = useQuery({
+    queryKey: ["sessions", eventId],
+    queryFn: () => import("../hooks/useTauri").then(m => m.getEventSessions(eventId)),
+    enabled: !!eventId,
+  });
+  if (!sessions || sessions.length === 0) return null;
+  return (
+    <div className="min-w-52">
+      <label className="label">Session (optional)</label>
+      <select className="select text-sm" value={value} onChange={e => onChange(e.target.value)}>
+        <option value="">— All sessions —</option>
+        {sessions.map((s: any) => (
+          <option key={s.id} value={s.id}>
+            Session {s.sessionNo}{s.title ? ` — ${s.title}` : ""} ({s.date})
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }

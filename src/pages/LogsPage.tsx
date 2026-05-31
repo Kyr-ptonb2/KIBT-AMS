@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity, LogIn, LogOut, UserPlus, Trash2, ScanLine,
-  Download, Settings, Shield, User, RefreshCw, FileText,
+  Download, Settings, Shield, User, Filter, RefreshCw, FileText,
 } from "lucide-react";
 import PageHeader from "../components/PageHeader";
 

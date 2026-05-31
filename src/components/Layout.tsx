@@ -1,7 +1,7 @@
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Calendar, ScanLine, Users, BarChart3,
-  Download, Settings, Wifi, WifiOff, UserCog, LogOut, ChevronDown, ScrollText,
+  Download, Settings, Wifi, WifiOff, UserCog, LogOut, ChevronDown, ScrollText, FileUp,
 } from "lucide-react";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,6 +12,7 @@ const ALL_NAV = [
   { to: "/dashboard",    icon: LayoutDashboard, label: "Dashboard",        minRole: "user"        },
   { to: "/events",       icon: Calendar,        label: "Events",           minRole: "user"        },
   { to: "/scan",         icon: ScanLine,        label: "Scan Sheet",       minRole: "user"        },
+  { to: "/import",       icon: FileUp,           label: "Import Data",      minRole: "user"        },
   { to: "/participants", icon: Users,            label: "Participants",     minRole: "user"        },
   { to: "/reports",      icon: BarChart3,        label: "Reports",         minRole: "user"        },
   { to: "/export",       icon: Download,         label: "Export",          minRole: "admin"       },
@@ -26,6 +27,7 @@ function roleLevel(role: string) {
 
 export default function Layout() {
   const { isOnline, currentUser, setCurrentUser } = useStore();
+  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const userLevel = roleLevel(currentUser?.role ?? "user");

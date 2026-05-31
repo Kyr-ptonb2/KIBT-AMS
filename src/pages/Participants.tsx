@@ -5,6 +5,7 @@ import { useStore } from "../store";
 import { getParticipants, updateParticipant, deleteParticipant } from "../hooks/useTauri";
 import { Participant, ParticipantInput, KIBT_REGIONS, BUSINESS_TYPES } from "../types";
 import PageHeader from "../components/PageHeader";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function Participants() {
   const { selectedFY, addToast, currentUser } = useStore();
@@ -18,6 +19,8 @@ export default function Participants() {
   const [editId, setEditId] = useState<string | null>(null);
   const [editData, setEditData] = useState<ParticipantInput | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingDeleteName, setPendingDeleteName] = useState<string>("");
 
   const { data: participants, isLoading } = useQuery({
     queryKey: ["participants", selectedFY, query, filterRegion, filterGender, filterAge, filterConsent],
@@ -166,6 +169,7 @@ export default function Participants() {
                     <th className="px-3 py-3 font-medium w-16">Age</th>
                     <th className="px-3 py-3 font-medium w-16">Gender</th>
                     <th className="px-3 py-3 font-medium">Phone</th>
+                    <th className="px-3 py-3 font-medium">Region</th>
                     <th className="px-3 py-3 font-medium w-16">Consent</th>
                     <th className="px-3 py-3 font-medium w-24">Actions</th>
                   </tr>
@@ -180,9 +184,7 @@ export default function Participants() {
                       onEdit={() => startEdit(p)}
                       onSave={commitEdit}
                       onCancel={() => { setEditId(null); setEditData(null); }}
-                      onDelete={() => {
-                        if (confirm(`Delete record for "${p.name}"?`)) deleteMut.mutate(p.id);
-                      }}
+                      onDelete={() => { setPendingDeleteId(p.id); setPendingDeleteName(p.name); }}
                       canDelete={currentUser?.role === "admin" || currentUser?.role === "super_admin"}
                       onFieldChange={(field, value) =>
                         setEditData((prev) => prev ? { ...prev, [field]: value } : prev)
@@ -195,6 +197,19 @@ export default function Participants() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={!!pendingDeleteId}
+        title="Delete Participant Record?"
+        message={`You are about to permanently delete the attendance record for "${pendingDeleteName}".`}
+        consequences={[
+          `Remove "${pendingDeleteName}" from this event's participant list`,
+          "This record will no longer appear in reports or statistics",
+        ]}
+        confirmLabel="Delete Record"
+        onConfirm={() => { if (pendingDeleteId) { deleteMut.mutate(pendingDeleteId); setPendingDeleteId(null); } }}
+        onCancel={() => setPendingDeleteId(null)}
+        loading={deleteMut.isPending}
+      />
     </div>
   );
 }
@@ -277,6 +292,7 @@ function ParticipantRow({
         ) : <span className="text-gray-300">—</span>}
       </td>
       <td className="px-3 py-2.5 text-gray-600 font-mono text-xs">{p.phone ?? <span className="text-gray-300 font-sans">—</span>}</td>
+      <td className="px-3 py-2.5 text-xs text-gray-600">{p.region ?? <span className="text-gray-300">—</span>}</td>
       <td className="px-3 py-2.5 text-center">
         <span className={`text-xs font-medium ${p.consent === "Yes" ? "text-green-600" : "text-gray-400"}`}>
           {p.consent ?? "No"}
@@ -287,7 +303,7 @@ function ParticipantRow({
           <button onClick={onEdit} className="p-1.5 rounded text-gray-400 hover:text-kibt-green hover:bg-green-50">
             <Pencil size={13} />
           </button>
-          {onDelete && (
+          {canDelete && (
             <button onClick={onDelete} className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50">
               <Trash2 size={13} />
             </button>

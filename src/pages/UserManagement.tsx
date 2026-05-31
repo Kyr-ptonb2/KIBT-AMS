@@ -3,10 +3,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
   UserPlus, Trash2, Shield, ShieldCheck, User as UserIcon,
-  Eye, EyeOff, RotateCcw, LogOut
+  Eye, EyeOff, RotateCcw, ChevronDown, LogOut
 } from "lucide-react";
 import { useStore } from "../store";
 import PageHeader from "../components/PageHeader";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 interface User {
   id: string; username: string; role: string;
@@ -35,6 +36,7 @@ export default function UserManagement() {
   const isSuperAdmin = currentUser?.role === "super_admin";
   const [showCreate, setShowCreate] = useState(false);
   const [resetUserId, setResetUserId] = useState<string | null>(null);
+  const [pendingDeleteUser, setPendingDeleteUser] = useState<{id: string; username: string} | null>(null);
 
   const { data: users } = useQuery<User[]>({
     queryKey: ["users"],
@@ -179,11 +181,7 @@ export default function UserManagement() {
                           <button
                             title="Delete user"
                             className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
-                            onClick={() => {
-                              if (confirm(`Delete user "${u.username}"? This cannot be undone.`)) {
-                                deleteMut.mutate(u.id);
-                              }
-                            }}
+                            onClick={() => setPendingDeleteUser({ id: u.id, username: u.username })}
                           >
                             <Trash2 size={13} />
                           </button>
@@ -225,6 +223,21 @@ export default function UserManagement() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!pendingDeleteUser}
+        title="Delete User Account?"
+        message={"You are about to permanently delete the account for @" + (pendingDeleteUser?.username ?? "") + "."}
+        consequences={[
+          "Permanently delete the account @" + (pendingDeleteUser?.username ?? ""),
+          "This user will immediately lose all access to the system",
+          "Their audit log entries will remain for record-keeping",
+        ]}
+        confirmLabel="Delete Account"
+        onConfirm={() => { if (pendingDeleteUser) { deleteMut.mutate(pendingDeleteUser.id); setPendingDeleteUser(null); } }}
+        onCancel={() => setPendingDeleteUser(null)}
+        loading={deleteMut.isPending}
+      />
     </div>
   );
 }

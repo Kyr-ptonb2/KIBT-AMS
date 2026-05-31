@@ -50,7 +50,7 @@ pub struct BusinessTypeSummary {
 pub struct EventSummary {
     pub id: String,
     pub title: String,
-    pub date: String,
+    pub start_date: String,
     pub region: String,
     pub venue: Option<String>,
     pub participant_count: i64,
@@ -171,12 +171,12 @@ pub fn get_report(
     // ── Event list with participant counts ─────────────────────────────────────
     let mut stmt3 = conn
         .prepare(r#"
-            SELECT e.id, e.title, e.date, e.region, e.venue, COUNT(p.id)
+            SELECT e.id, e.title, COALESCE(e.start_date, e.created_at) AS date, e.region, e.venue, COUNT(p.id)
             FROM events e
             LEFT JOIN participants p ON p.event_id = e.id
             WHERE e.financial_year = ?1
             GROUP BY e.id
-            ORDER BY e.date DESC
+            ORDER BY COALESCE(e.start_date, e.created_at) DESC
         "#)
         .map_err(|e| e.to_string())?;
 
@@ -185,7 +185,7 @@ pub fn get_report(
             Ok(EventSummary {
                 id: row.get(0)?,
                 title: row.get(1)?,
-                date: row.get(2)?,
+                start_date: row.get(2)?,
                 region: row.get(3)?,
                 venue: row.get(4)?,
                 participant_count: row.get(5)?,

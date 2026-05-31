@@ -1,20 +1,44 @@
+// types/index.ts — Shared TypeScript interfaces mirroring Rust structs.
+
 export interface Event {
-  id: string; title: string; date: string; region: string;
-  venue?: string; financialYear: string; notes?: string;
-  createdAt: string; participantCount?: number;
+  id: string;
+  title: string;
+  startDate: string;     // YYYY-MM-DD
+  endDate: string;       // YYYY-MM-DD
+  region: string;
+  venue?: string;
+  financialYear: string;
+  eventType: "in-person" | "online" | "hybrid";
+  notes?: string;
+  createdAt: string;
+  participantCount?: number;
+  sessionCount?: number;
+}
+
+export interface EventSession {
+  id: string;
+  eventId: string;
+  sessionNo: number;
+  title?: string;
+  date: string;
+  startTime?: string;
+  endTime?: string;
+  region?: string;
+  venue?: string;
+  participantCount?: number;
 }
 
 export interface Participant {
   id: string; eventId: string; name: string;
   businessType?: string; ageCategory?: string; gender?: string;
   phone?: string; consent?: string; location?: string;
-  extraFields?: string; addedAt: string;
+  region?: string; extraFields?: string; addedAt: string;
 }
 
 export interface ParticipantInput {
   name: string; businessType?: string; ageCategory?: string;
   gender?: string; phone?: string; consent?: string;
-  location?: string; extraFields?: string;
+  location?: string; region?: string; extraFields?: string;
 }
 
 export interface ParticipantFilter {
@@ -55,11 +79,10 @@ export interface RegionSummary {
   region: string; events: number; participants: number;
   male: number; female: number; consent: number; ageA: number; ageB: number;
 }
-
 export interface BusinessTypeSummary { businessType: string; count: number; }
-
 export interface EventSummary {
-  id: string; title: string; date: string; region: string;
+  date: string;
+  id: string; title: string; startDate: string; region: string;
   venue?: string; participantCount: number;
 }
 
@@ -79,14 +102,27 @@ export interface QueueItem {
   rows?: ParticipantInput[];
 }
 
+// All 47 Kenya counties
 export const KIBT_REGIONS = [
-  "Nairobi","Mombasa","Kisumu","Nakuru","Eldoret","Thika","Nyeri","Meru",
-  "Garissa","Kakamega","Kitale","Machakos","Embu","Kisii","Kericho",
-  "Malindi","Nanyuki","Bungoma",
+  "Mombasa", "Kwale", "Kilifi", "Tana River", "Lamu", "Taita-Taveta",
+  "Garissa", "Wajir", "Mandera", "Marsabit", "Isiolo", "Meru",
+  "Tharaka-Nithi", "Embu", "Kitui", "Machakos", "Makueni", "Nyandarua",
+  "Nyeri", "Kirinyaga", "Murang'a", "Kiambu", "Turkana", "West Pokot",
+  "Samburu", "Trans-Nzoia", "Uasin Gishu", "Elgeyo-Marakwet", "Nandi",
+  "Baringo", "Laikipia", "Nakuru", "Narok", "Kajiado", "Kericho",
+  "Bomet", "Kakamega", "Vihiga", "Bungoma", "Busia", "Siaya",
+  "Kisumu", "Homa Bay", "Migori", "Kisii", "Nyamira", "Nairobi",
 ] as const;
 
 export const BUSINESS_TYPES = [
-  "Sole proprietor","Partnership","Limited company","Cooperative","Association","Other",
+  "Sole proprietor", "Partnership", "Limited company",
+  "Cooperative", "Association", "Other",
+] as const;
+
+export const EVENT_TYPES = [
+  { value: "in-person", label: "In-Person",  color: "bg-green-100 text-green-700" },
+  { value: "online",    label: "Online",      color: "bg-blue-100 text-blue-700"  },
+  { value: "hybrid",    label: "Hybrid",      color: "bg-purple-100 text-purple-700" },
 ] as const;
 
 export const SCAN_METHOD_LABELS: Record<string, { label: string; color: string; bg: string }> = {

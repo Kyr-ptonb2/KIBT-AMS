@@ -181,3 +181,47 @@ pub fn delete_participant(
     }
     Ok(rows > 0)
 }
+
+// ── Bulk import from CSV/Excel parse result ───────────────────────────────────
+
+/// Import participants from a pre-parsed list (frontend parses the CSV/Excel file,
+/// sends rows as ParticipantInput array with source="import").
+#[tauri::command]
+pub fn import_participants(
+    state: State<'_, AppDataDir>,
+    auth: State<'_, AuthState>,
+    event_id: String,
+    session_id: Option<String>,
+    rows: Vec<ParticipantInput>,
+) -> Result<usize, String> {
+    let mut conn = open(&state.0).map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut saved = 0usize;
+
+    for row in &rows {
+        if row.name.trim().is_empty() { continue; }
+        let id = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            r#"INSERT INTO participants
+               (id, event_id, session_id, name, business_type, age_category, gender, phone,
+                consent, location, extra_fields, source, added_at)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'import',?12)"#,
+            params![
+                id, event_id, session_id, row.name.trim(),
+                row.business_type, row.age_category, row.gender, row.phone,
+                row.consent, row.location, row.extra_fields, now
+            ],
+        ).map_err(|e| e.to_string())?;
+        saved += 1;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    let (actor_id, actor_name) = session_actor(&auth);
+    write_log(&state.0, actor_id.as_deref(), actor_name.as_deref(),
+        "participant.import", "participant", Some(&event_id),
+        Some(&format!("{} participants imported", saved)), None);
+
+    Ok(saved)
+}

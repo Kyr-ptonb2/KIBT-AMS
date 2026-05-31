@@ -145,7 +145,7 @@ export default function Reports() {
                 <tbody className="divide-y divide-gray-50">
                   {report.events.map((ev) => (
                     <tr key={ev.id} className="hover:bg-gray-50">
-                      <td className="py-2 text-gray-500 text-xs">{ev.date}</td>
+                      <td className="py-2 text-gray-500 text-xs">{ev.startDate ?? ev.date ?? ""}</td>
                       <td className="py-2 font-medium text-gray-800">{ev.title}</td>
                       <td className="py-2 text-gray-600">{ev.region}</td>
                       <td className="py-2 text-gray-500 text-xs">{ev.venue ?? "—"}</td>
