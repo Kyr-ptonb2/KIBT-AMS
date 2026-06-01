@@ -44,6 +44,12 @@ export interface ParticipantInput {
 export interface ParticipantFilter {
   eventId?: string; financialYear?: string; region?: string;
   gender?: string; ageCategory?: string; consent?: string; query?: string;
+  limit?: number; offset?: number;
+}
+
+export interface QueueItemInput {
+  itemId: string; eventId: string; imageBytes: number[];
+  filename: string;
 }
 
 export interface ScanResult {
@@ -127,7 +133,6 @@ export const EVENT_TYPES = [
 
 export const SCAN_METHOD_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   gemini:    { label: "Online — Gemini",     color: "text-green-700", bg: "bg-green-100" },
-  tesseract: { label: "Offline — Tesseract", color: "text-amber-700", bg: "bg-amber-100" },
   manual:    { label: "Manual Entry",        color: "text-gray-600",  bg: "bg-gray-100"  },
   failed:    { label: "Failed",              color: "text-red-700",   bg: "bg-red-100"   },
 };

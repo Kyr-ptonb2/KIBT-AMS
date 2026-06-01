@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Calendar, ScanLine, Users, BarChart3,
   Download, Settings, Wifi, WifiOff, UserCog, LogOut, ChevronDown, ScrollText, FileUp,
@@ -27,7 +27,6 @@ function roleLevel(role: string) {
 
 export default function Layout() {
   const { isOnline, currentUser, setCurrentUser } = useStore();
-  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const userLevel = roleLevel(currentUser?.role ?? "user");

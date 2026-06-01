@@ -24,7 +24,7 @@ pub struct ScanResult {
     pub detected_columns: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueItemInput {
     pub item_id: String,

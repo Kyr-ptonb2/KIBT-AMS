@@ -36,6 +36,13 @@ pub async fn run_batch(
         Err(_) => return Err("Gemini API key not configured. Set it in Settings.".to_string()),
     };
 
+    // Create index map for ordering results later
+    let items_map: std::collections::HashMap<String, usize> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| (item.item_id.clone(), i))
+        .collect();
+
     // 4 concurrent workers with rate limiting
     let semaphore = Arc::new(tokio::sync::Semaphore::new(4));
     let rate_limiter = Arc::new(tokio::sync::Mutex::new(std::time::Instant::now()));
@@ -186,9 +193,9 @@ pub async fn run_batch(
         }
     }
 
-    // Sort results by index to maintain order
+    // Sort results by original index to maintain order
     results.sort_by_key(|r| {
-        items.iter().position(|item| item.item_id == r.item_id).unwrap_or(usize::MAX)
+        items_map.get(&r.item_id).copied().unwrap_or(usize::MAX)
     });
 
     Ok(BatchScanResult { batch_id, results, total_extracted })
