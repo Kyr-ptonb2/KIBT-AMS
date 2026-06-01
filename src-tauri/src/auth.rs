@@ -178,18 +178,9 @@ pub fn login(
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    // If this is the default account's FIRST login, mark it dormant immediately
-    // It can still complete this session (setup profile), but can NEVER log in again after logout.
-    if is_default && must_change {
-        conn.execute(
-            "UPDATE users SET last_login = ?1, is_dormant = 1 WHERE id = ?2",
-            params![now, id],
-        ).map_err(|e| e.to_string())?;
-        eprintln!("[auth] Default account used for first time — now dormant.");
-    } else {
-        conn.execute("UPDATE users SET last_login = ?1 WHERE id = ?2", params![now, id])
-            .map_err(|e| e.to_string())?;
-    }
+    // Just update last_login, don't mark as dormant yet
+    conn.execute("UPDATE users SET last_login = ?1 WHERE id = ?2", params![now, id])
+        .map_err(|e| e.to_string())?;
 
     write_log(&state.0, Some(&id), Some(&username), "auth.login", "auth",
         None, None, if is_default { Some("Default account first use") } else { None });
@@ -245,7 +236,8 @@ pub fn setup_profile(
 
     conn.execute(
         r#"UPDATE users SET username=?1, password_hash=?2, full_name=?3, email=?4,
-           phone=?5, id_number=?6, must_change_password=0, recovery_code_hash=?7
+           phone=?5, id_number=?6, must_change_password=0, recovery_code_hash=?7,
+           is_dormant=1
            WHERE id=?8"#,
         params![input.new_username.trim(), password_hash, input.full_name.trim(),
                 input.email.trim(), input.phone.trim(), input.id_number.trim(),

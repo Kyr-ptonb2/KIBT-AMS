@@ -2,7 +2,6 @@
 
 pub mod batch;
 pub mod gemini;
-pub mod offline;
 
 use crate::db::{open, AppDataDir};
 use crate::logs::write_log;
@@ -82,57 +81,39 @@ pub async fn scan_sheet(
     event_id: String,
     image_bytes: Vec<u8>,
     filename: String,
-    method: String,
 ) -> Result<ScanResult, String> {
     let app_data_dir = state.0.clone();
+    let gemini_key = get_gemini_key().map_err(|e| e.to_string())?;
 
-    let use_online = match method.as_str() {
-        "online"  => true,
-        "offline" => false,
-        _         => check_connectivity().await,
-    };
+    match gemini::scan_with_gemini(&image_bytes, &gemini_key).await {
+        Ok(r) => {
+            let extracted = r.rows.len();
+            let cols_json = serde_json::to_string(&r.detected_columns).ok();
+            let scan_id = save_scan_record(
+                &app_data_dir, &event_id, None, None,
+                &image_bytes, &filename, "gemini",
+                extracted, &None, cols_json.as_deref(),
+            ).map_err(|e| e.to_string())?;
 
-    let gemini_key = if use_online { get_gemini_key().ok() } else { None };
+            write_log(&app_data_dir, None, None,
+                "scan.gemini", "scan",
+                Some(&scan_id), Some(&event_id),
+                Some(&format!("{} rows extracted from {}", extracted, filename)));
 
-    let (rows, actual_method, accuracy_note, detected_columns) =
-        if use_online && gemini_key.is_some() {
-            match gemini::scan_with_gemini(&image_bytes, gemini_key.as_deref().unwrap()).await {
-                Ok(r) => (r.rows, "gemini", None, r.detected_columns),
-                Err(e) => {
-                    let msg = friendly_api_error(&e.to_string());
-                    eprintln!("Gemini scan failed: {}; falling back to Tesseract", msg);
-                    let (r, _note) = offline::scan_offline(&image_bytes, &app_data_dir)
-                        .map_err(|e| e.to_string())?;
-                    (r, "tesseract", Some(format!("Online failed ({}); used offline OCR.", msg)), vec![])
-                }
-            }
-        } else {
-            let (r, note) = offline::scan_offline(&image_bytes, &app_data_dir)
-                .map_err(|e| e.to_string())?;
-            (r, "tesseract", note, vec![])
-        };
-
-    let extracted = rows.len();
-    let cols_json = serde_json::to_string(&detected_columns).ok();
-    let scan_id = save_scan_record(
-        &app_data_dir, &event_id, None, None,
-        &image_bytes, &filename, actual_method,
-        extracted, &accuracy_note, cols_json.as_deref(),
-    ).map_err(|e| e.to_string())?;
-
-    write_log(&app_data_dir, None, None,
-        &format!("scan.{}", actual_method), "scan",
-        Some(&scan_id), Some(&event_id),
-        Some(&format!("{} rows extracted from {}", extracted, filename)));
-
-    Ok(ScanResult {
-        scan_id,
-        method: actual_method.to_string(),
-        rows,
-        extracted_count: extracted,
-        accuracy_note,
-        detected_columns,
-    })
+            Ok(ScanResult {
+                scan_id,
+                method: "gemini".to_string(),
+                rows: r.rows,
+                extracted_count: extracted,
+                accuracy_note: None,
+                detected_columns: r.detected_columns,
+            })
+        }
+        Err(e) => {
+            let msg = friendly_api_error(&e.to_string());
+            Err(msg)
+        }
+    }
 }
 
 #[tauri::command]

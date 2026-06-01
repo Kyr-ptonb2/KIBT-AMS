@@ -37,6 +37,8 @@ pub struct ParticipantFilter {
     pub region: Option<String>, pub gender: Option<String>,
     pub age_category: Option<String>, pub consent: Option<String>,
     pub query: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 fn session_actor(auth: &State<'_, AuthState>) -> (Option<String>, Option<String>) {
@@ -76,6 +78,10 @@ pub fn get_participants(
         bind.push(p.clone()); bind.push(p.clone()); bind.push(p);
     }
     sql.push_str(" ORDER BY p.added_at DESC");
+
+    let limit = filter.limit.unwrap_or(500).min(5000);
+    let offset = filter.offset.unwrap_or(0).max(0);
+    sql.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
 
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt

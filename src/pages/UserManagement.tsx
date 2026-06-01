@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
   UserPlus, Trash2, Shield, ShieldCheck, User as UserIcon,
-  Eye, EyeOff, RotateCcw, ChevronDown, LogOut
+  Eye, EyeOff, RotateCcw, LogOut
 } from "lucide-react";
 import { useStore } from "../store";
 import PageHeader from "../components/PageHeader";

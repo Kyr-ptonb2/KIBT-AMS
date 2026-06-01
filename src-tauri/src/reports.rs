@@ -67,7 +67,7 @@ pub fn get_report(
     let conn = open(&state.0).map_err(|e| e.to_string())?;
 
     // ── Totals ────────────────────────────────────────────────────────────────
-    let totals: (i64, i64, i64, i64, i64, i64, i64) = conn
+    let totals: (i64, i64, i64, i64, i64, i64, i64, i64) = conn
         .query_row(
             r#"
             SELECT
@@ -92,19 +92,10 @@ pub fn get_report(
                 row.get::<_, i64>(4)?,
                 row.get::<_, i64>(5)?,
                 row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
             )),
         )
         .map_err(|e| e.to_string())?;
-
-    let age_b: i64 = conn
-        .query_row(
-            r#"SELECT SUM(CASE WHEN p.age_category = 'B' THEN 1 ELSE 0 END)
-               FROM participants p JOIN events e ON e.id = p.event_id
-               WHERE e.financial_year = ?1"#,
-            params![financial_year],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
 
     // ── Per-region breakdown ───────────────────────────────────────────────────
     let mut stmt = conn
@@ -204,7 +195,7 @@ pub fn get_report(
         female_count: totals.4,
         consent_count: totals.5,
         age_a_count: totals.6,
-        age_b_count: age_b,
+        age_b_count: totals.7,
         regions,
         business_types,
         events,

@@ -20,7 +20,13 @@ import { checkConnectivity, getConfig, getFinancialYears } from "./hooks/useTaur
 import ToastContainer from "./components/ToastContainer";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 60_000, // 1 minute default
+      gcTime: 5 * 60_000, // 5 minutes garbage collection
+    },
+  },
 });
 
 export default function App() {

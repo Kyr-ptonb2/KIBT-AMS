@@ -33,6 +33,8 @@ export default function Participants() {
         ageCategory: filterAge || undefined,
         consent: filterConsent || undefined,
       }),
+    staleTime: 2 * 60_000, // 2 minutes
+    gcTime: 10 * 60_000,   // 10 minutes
   });
 
   const updateMut = useMutation({

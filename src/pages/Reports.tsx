@@ -11,13 +11,25 @@ export default function Reports() {
   const { data: report, isLoading } = useQuery({
     queryKey: ["report", selectedFY],
     queryFn: () => getReport(selectedFY),
+    staleTime: 5 * 60_000, // 5 minutes — reports are aggregations
+    gcTime: 15 * 60_000,   // 15 minutes
   });
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Loading report…</div>
   );
 
-  if (!report) return null;
+  if (!report || report.totalParticipants === 0) return (
+    <div className="min-h-full bg-gray-50">
+      <PageHeader
+        title={`Annual Report — FY ${selectedFY}`}
+        subtitle="Kenya Institute of Business Training — Statistical Summary"
+      />
+      <div className="flex items-center justify-center h-96 text-gray-400 text-sm">
+        No data available for FY {selectedFY}. Create events and scan participants to generate reports.
+      </div>
+    </div>
+  );
 
   const malePercent = report.totalParticipants > 0
     ? ((report.maleCount / report.totalParticipants) * 100).toFixed(1)

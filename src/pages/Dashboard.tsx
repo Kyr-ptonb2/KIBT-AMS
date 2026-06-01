@@ -13,11 +13,15 @@ export default function Dashboard() {
   const { data: report, isLoading } = useQuery({
     queryKey: ["report", selectedFY],
     queryFn: () => getReport(selectedFY),
+    staleTime: 5 * 60_000, // 5 minutes
+    gcTime: 15 * 60_000,   // 15 minutes
   });
 
   const { data: recentEvents } = useQuery({
     queryKey: ["events", selectedFY],
     queryFn: () => getEvents(selectedFY),
+    staleTime: 3 * 60_000, // 3 minutes
+    gcTime: 10 * 60_000,   // 10 minutes
   });
 
   const malePercent = report && report.totalParticipants > 0

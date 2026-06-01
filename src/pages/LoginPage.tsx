@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Lock, User, Eye, EyeOff, Loader, KeyRound, ArrowLeft, CheckCircle } from "lucide-react";
+import { Lock, User, Eye, EyeOff, Loader, KeyRound, ArrowLeft, CheckCircle, Briefcase } from "lucide-react";
 import { useStore } from "../store";
 
 type Screen = "login" | "recovery_step1" | "recovery_step2" | "recovery_done";
@@ -94,7 +94,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
           <div className="text-center mb-8">
             <div className="w-16 h-16 rounded-2xl bg-kibt-green flex items-center justify-center mx-auto mb-4">
-              <span className="text-white text-2xl font-bold">K</span>
+              <Briefcase size={32} className="text-white" />
             </div>
             <h1 className="text-xl font-bold text-gray-900">KIBT-AMS</h1>
             <p className="text-sm text-gray-500 mt-1">Attendance Management System</p>

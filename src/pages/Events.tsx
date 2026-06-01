@@ -1,5 +1,5 @@
 import React from "react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -9,7 +9,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import { createEvent, deleteEvent, getEvents } from "../hooks/useTauri";
-import { getEventSessions, createSession, deleteSession } from "../hooks/useTauri";
+import { deleteSession } from "../hooks/useTauri";
 import { KIBT_REGIONS, EVENT_TYPES, EventSession } from "../types";
 import PageHeader from "../components/PageHeader";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -261,6 +261,10 @@ function SessionsPanel({ eventId, eventStartDate, eventEndDate, eventRegion, can
     title: "", date: eventStartDate, startTime: "", endTime: "", region: eventRegion, venue: "",
   });
 
+  const regionOptions = useMemo(() =>
+    KIBT_REGIONS.map(r => <option key={r} value={r}>{r}</option>),
+  []);
+
   const { data: sessions } = useQuery({
     queryKey: ["sessions", eventId],
     queryFn: () => import("../hooks/useTauri").then(m => m.getEventSessions(eventId)),
@@ -315,7 +319,7 @@ function SessionsPanel({ eventId, eventStartDate, eventEndDate, eventRegion, can
               <label className="label">Region</label>
               <select className="select text-sm" value={form.region}
                 onChange={e => setForm({...form, region: e.target.value})}>
-                {KIBT_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                {regionOptions}
               </select>
             </div>
             <div className="col-span-2">
@@ -394,6 +398,14 @@ function EventForm({ defaultRegion, onSubmit, onCancel, loading }: {
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }));
 
+  const regionOptions = useMemo(() =>
+    KIBT_REGIONS.map(r => <option key={r} value={r}>{r}</option>),
+  []);
+
+  const eventTypeOptions = useMemo(() =>
+    EVENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>),
+  []);
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -417,13 +429,13 @@ function EventForm({ defaultRegion, onSubmit, onCancel, loading }: {
         <div>
           <label className="label">Event Type *</label>
           <select className="select" value={form.eventType} onChange={set("eventType")}>
-            {EVENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {eventTypeOptions}
           </select>
         </div>
         <div>
           <label className="label">Primary Region *</label>
           <select className="select" value={form.region} onChange={set("region")}>
-            {KIBT_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            {regionOptions}
           </select>
         </div>
         <div className="col-span-2">

@@ -144,11 +144,17 @@ fn migrate(conn: &Connection) -> Result<()> {
 
 fn create_indices(conn: &Connection) -> Result<()> {
     conn.execute_batch(r#"
-        CREATE INDEX IF NOT EXISTS idx_participants_event_id  ON participants(event_id);
-        CREATE INDEX IF NOT EXISTS idx_participants_session_id ON participants(session_id);
-        CREATE INDEX IF NOT EXISTS idx_events_fy              ON events(financial_year);
-        CREATE INDEX IF NOT EXISTS idx_events_region          ON events(region);
-        CREATE INDEX IF NOT EXISTS idx_sessions_event_id      ON event_sessions(event_id);
+        CREATE INDEX IF NOT EXISTS idx_participants_event_id   ON participants(event_id);
+        CREATE INDEX IF NOT EXISTS idx_participants_session_id  ON participants(session_id);
+        CREATE INDEX IF NOT EXISTS idx_participants_added_at    ON participants(added_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_participants_event_added ON participants(event_id, added_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_participants_name        ON participants(name);
+        CREATE INDEX IF NOT EXISTS idx_events_fy                ON events(financial_year);
+        CREATE INDEX IF NOT EXISTS idx_events_region            ON events(region);
+        CREATE INDEX IF NOT EXISTS idx_events_fy_region         ON events(financial_year, region);
+        CREATE INDEX IF NOT EXISTS idx_sessions_event_id        ON event_sessions(event_id);
+        CREATE INDEX IF NOT EXISTS idx_scans_batch_id           ON scans(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_scans_event_id           ON scans(event_id);
     "#)?;
     Ok(())
 }

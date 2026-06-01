@@ -52,7 +52,9 @@ export default function ScanSheet() {
 
   // Listen for batch progress events from Rust
   useEffect(() => {
-    const unlisten = listen<BatchProgressEvent>("scan_batch_progress", (event) => {
+    let unlistenFn: (() => void) | null = null;
+
+    listen<BatchProgressEvent>("scan_batch_progress", (event) => {
       const p = event.payload;
       setQueue((prev) =>
         prev.map((item) =>
@@ -69,18 +71,36 @@ export default function ScanSheet() {
             : item
         )
       );
-    });
-    return () => { unlisten.then((fn) => fn()); };
+    }).then((fn) => { unlistenFn = fn; });
+
+    return () => { unlistenFn?.(); };
   }, []);
 
   // ── Single scan handlers ──────────────────────────────────────────────────
 
   const handleSingleFile = (file: File) => {
     setSingleFile(file);
-    setSinglePreview(URL.createObjectURL(file));
+    const objectUrl = URL.createObjectURL(file);
+    setSinglePreview(objectUrl);
     setReviewRows([]);
     setSingleMethod(null);
   };
+
+  // Cleanup preview URLs when they change
+  useEffect(() => {
+    return () => {
+      if (singlePreview) URL.revokeObjectURL(singlePreview);
+    };
+  }, [singlePreview]);
+
+  // Cleanup batch preview URLs on unmount and queue changes
+  useEffect(() => {
+    return () => {
+      queue.forEach((item: any) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [queue]);
 
   const handleSingleScan = async () => {
     if (!singleFile || !selectedEventId) return;
