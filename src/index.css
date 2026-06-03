@@ -55,7 +55,7 @@
   .badge-gemini {
     @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700;
   }
-  .badge-tesseract {
+  .badge-gemini {
     @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700;
   }
   .badge-manual {

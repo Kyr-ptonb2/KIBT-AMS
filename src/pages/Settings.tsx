@@ -139,18 +139,6 @@ export default function Settings() {
                 {KIBT_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
-            <div>
-              <label className="label">Scan Method Preference</label>
-              <select
-                className="select"
-                value={config.scanMethodPreference}
-                onChange={(e) => setLocalConfig({ ...config, scanMethodPreference: e.target.value as any })}
-              >
-                <option value="auto">Auto (recommended)</option>
-                <option value="online">Always Online (Gemini)</option>
-                <option value="offline">Always Offline (Tesseract)</option>
-              </select>
-            </div>
           </div>
           <div className="flex items-center gap-3">
             <input

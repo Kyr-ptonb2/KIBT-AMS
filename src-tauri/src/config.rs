@@ -20,8 +20,6 @@ pub struct AppConfig {
     /// Gemini API key (loaded from OS keychain, NOT from database).
     pub gemini_api_key: Option<String>,
     pub default_region: Option<String>,
-    /// "auto" | "online" | "offline"
-    pub scan_method_preference: String,
     pub auto_update: bool,
     pub database_path: Option<String>,
 }
@@ -35,25 +33,19 @@ pub fn get_config(state: State<'_, AppDataDir>) -> Result<AppConfig, String> {
     let conn = open(&state.0).map_err(|e| e.to_string())?;
 
     let default_region = get_setting(&conn, "default_region");
-    let scan_method = get_setting(&conn, "scan_method_preference")
-        .unwrap_or_else(|| "auto".to_string());
     let auto_update: bool = get_setting(&conn, "auto_update")
         .map(|v| v == "true")
         .unwrap_or(true);
 
-    // Load API key from OS keychain
     let gemini_api_key = Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .and_then(|entry| entry.get_password())
         .ok();
 
-    let db_path_str = db_path(&state.0)
-        .to_string_lossy()
-        .to_string();
+    let db_path_str = db_path(&state.0).to_string_lossy().to_string();
 
     Ok(AppConfig {
         gemini_api_key,
         default_region,
-        scan_method_preference: scan_method,
         auto_update,
         database_path: Some(db_path_str),
     })
@@ -84,8 +76,6 @@ pub fn save_config(
     if let Some(ref r) = config.default_region {
         set_setting(&conn, "default_region", r).map_err(|e| e.to_string())?;
     }
-    set_setting(&conn, "scan_method_preference", &config.scan_method_preference)
-        .map_err(|e| e.to_string())?;
     set_setting(
         &conn,
         "auto_update",

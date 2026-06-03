@@ -79,7 +79,7 @@ export default function Layout() {
         <div className="px-4 py-2 border-t border-white/10">
           <div className={`flex items-center gap-2 text-xs font-medium ${isOnline ? "text-green-300" : "text-amber-300"}`}>
             {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
-            {isOnline ? "Online — Gemini ready" : "Offline — Using Tesseract"}
+            {isOnline ? "Online — Gemini ready" : "Offline — Scanning unavailable"}
           </div>
         </div>
 

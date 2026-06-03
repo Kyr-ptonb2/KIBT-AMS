@@ -121,7 +121,9 @@ export default function ImportParticipants() {
       reader.onload = (e) => {
         const text = e.target?.result as string;
         const result = Papa.parse<Record<string, string>>(text, {
-          header: true, skipEmptyLines: true, trimHeaders: true,
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (h: string) => h.trim(),
         });
         processData(result.meta.fields ?? [], result.data);
       };
@@ -299,7 +301,7 @@ export default function ImportParticipants() {
                 </div>
                 <div className="flex items-start gap-2">
                   <Info size={14} className="mt-0.5 flex-shrink-0" />
-    <span><strong>Column headers</strong><br/>First row must contain column names. Extra columns are preserved.<br/>
+                  <span><strong>Column headers</strong><br/>First row must contain column names. Extra columns are preserved.<br/>
                   <a href="/import-template.csv" download className="underline text-blue-600 flex items-center gap-1 mt-1">
                     <Download size={11} /> Download template CSV
                   </a></span>

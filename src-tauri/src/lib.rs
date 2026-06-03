@@ -66,7 +66,7 @@ pub fn run() {
             participants::update_participant,
             participants::delete_participant,
             participants::import_participants,
-            // Scanning
+            // Scanning (Gemini online only)
             scan::scan_sheet,
             scan::scan_batch,
             scan::get_scan_queue_status,

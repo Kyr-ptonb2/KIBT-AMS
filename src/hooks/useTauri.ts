@@ -55,13 +55,11 @@ export const scanSheet = (
   eventId: string,
   imageBytes: number[],
   filename: string,
-  method: "auto" | "online" | "offline" = "auto"
-) => invoke<ScanResult>("scan_sheet", { eventId, imageBytes, filename, method });
+) => invoke<ScanResult>("scan_sheet", { eventId, imageBytes, filename });
 
 export const scanBatch = (
   items: QueueItemInput[],
-  method: "auto" | "online" | "offline" = "auto"
-) => invoke<BatchScanResult>("scan_batch", { items, method });
+) => invoke<BatchScanResult>("scan_batch", { items });
 
 export const checkConnectivity = () => invoke<boolean>("check_connectivity");
 

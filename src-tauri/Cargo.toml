@@ -42,8 +42,6 @@ thiserror = "1"
 # OS keychain (API key storage)
 keyring = { version = "2", features = ["default"] }
 
-# Image processing (pure Rust — for future preprocessing)
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
 
 # Excel export (pure Rust — no native libs required)
 rust_xlsxwriter = "0.79"

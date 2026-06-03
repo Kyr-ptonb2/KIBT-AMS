@@ -1,4 +1,4 @@
-// scan/mod.rs — Scan pipeline orchestrator.
+// scan/mod.rs — Scan pipeline (Gemini online only).
 
 pub mod batch;
 pub mod gemini;
@@ -75,6 +75,7 @@ pub async fn check_connectivity() -> bool {
     ).is_ok()
 }
 
+/// Scan a single sheet image using Gemini (online only).
 #[tauri::command]
 pub async fn scan_sheet(
     state: State<'_, AppDataDir>,
@@ -83,7 +84,9 @@ pub async fn scan_sheet(
     filename: String,
 ) -> Result<ScanResult, String> {
     let app_data_dir = state.0.clone();
-    let gemini_key = get_gemini_key().map_err(|e| e.to_string())?;
+    let gemini_key = get_gemini_key().map_err(|_| {
+        "Gemini API key not configured. Please add it in Settings.".to_string()
+    })?;
 
     match gemini::scan_with_gemini(&image_bytes, &gemini_key).await {
         Ok(r) => {
@@ -109,21 +112,18 @@ pub async fn scan_sheet(
                 detected_columns: r.detected_columns,
             })
         }
-        Err(e) => {
-            let msg = friendly_api_error(&e.to_string());
-            Err(msg)
-        }
+        Err(e) => Err(friendly_api_error(&e.to_string())),
     }
 }
 
+/// Scan multiple sheets in batch using Gemini (online only).
 #[tauri::command]
 pub async fn scan_batch(
     app_handle: tauri::AppHandle,
     state: State<'_, AppDataDir>,
     items: Vec<QueueItemInput>,
-    method: String,
 ) -> Result<BatchScanResult, String> {
-    batch::run_batch(app_handle, state, items, method).await
+    batch::run_batch(app_handle, state, items).await
 }
 
 #[tauri::command]
@@ -199,9 +199,7 @@ pub fn save_scan_record(
            VALUES (?1,?2,?3,?4,?5,?6,?7,0,?8,?9,?10,?11)"#,
         params![
             scan_id, batch_id, batch_sequence, event_id, relative, method,
-            extracted as i64, accuracy_note, now,
-            if method == "gemini" { "gemini-3.1-flash-lite" } else { "tesseract-5" },
-            detected_columns
+            extracted as i64, accuracy_note, now, "gemini-2.0-flash", detected_columns
         ],
     )?;
     Ok(scan_id)

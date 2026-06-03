@@ -305,7 +305,7 @@ function ParticipantRow({
           <button onClick={onEdit} className="p-1.5 rounded text-gray-400 hover:text-kibt-green hover:bg-green-50">
             <Pencil size={13} />
           </button>
-          {canDelete && (
+          {onDelete && (
             <button onClick={onDelete} className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50">
               <Trash2 size={13} />
             </button>

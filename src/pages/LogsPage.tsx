@@ -29,7 +29,6 @@ const ACTION_META: Record<string, { icon: React.ReactNode; color: string; label:
   "participant.update":  { icon: <User size={13} />,      color: "text-blue-600 bg-blue-50",     label: "Participant Edited"},
   "participant.delete":  { icon: <Trash2 size={13} />,    color: "text-red-600 bg-red-50",       label: "Participant Deleted"},
   "scan.gemini":         { icon: <ScanLine size={13} />,  color: "text-green-600 bg-green-50",   label: "Scan (Gemini)"    },
-  "scan.tesseract":      { icon: <ScanLine size={13} />,  color: "text-amber-600 bg-amber-50",   label: "Scan (Tesseract)" },
   "export.excel":        { icon: <Download size={13} />,  color: "text-blue-600 bg-blue-50",     label: "Excel Export"     },
   "export.csv":          { icon: <Download size={13} />,  color: "text-blue-600 bg-blue-50",     label: "CSV Export"       },
   "config.save":         { icon: <Settings size={13} />,  color: "text-gray-600 bg-gray-100",    label: "Settings Saved"   },

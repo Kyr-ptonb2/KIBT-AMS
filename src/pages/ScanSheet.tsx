@@ -19,7 +19,7 @@ import PageHeader from "../components/PageHeader";
 type ScanMode = "single" | "batch";
 
 export default function ScanSheet() {
-  const { selectedFY, isOnline, addToast } = useStore();
+  const { selectedFY, addToast } = useStore();
   const [searchParams] = useSearchParams();
   const qc = useQueryClient();
 
@@ -223,7 +223,7 @@ export default function ScanSheet() {
     const m = SCAN_METHOD_LABELS[method] ?? SCAN_METHOD_LABELS.manual;
     return (
       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${m.bg} ${m.color}`}>
-        {method === "gemini" ? <CheckCircle size={12} /> : method === "tesseract" ? <AlertCircle size={12} /> : null}
+        {method === "gemini" ? <CheckCircle size={12} /> : null}
         {m.label}
       </span>
     );
@@ -276,10 +276,6 @@ export default function ScanSheet() {
                 {m === "single" ? "Single Image" : "Batch Upload"}
               </button>
             ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Scan method:</span>
-            {scanMethodBadge(isOnline ? "gemini" : "tesseract")}
           </div>
         </div>
 
@@ -365,9 +361,6 @@ export default function ScanSheet() {
                       Review — {reviewRows.filter((r) => r.name.trim()).length} rows
                     </h3>
                     {scanMethodBadge(singleMethod)}
-                    {singleMethod === "tesseract" && (
-                      <span className="text-xs text-amber-600">Review names and phone numbers carefully</span>
-                    )}
                   </div>
                   <div className="flex gap-2">
                     <button className="btn-secondary text-xs" onClick={addManualRow}>

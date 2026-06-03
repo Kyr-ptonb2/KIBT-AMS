@@ -28,8 +28,8 @@ pub struct User {
     pub full_name: Option<String>, pub email: Option<String>,
     pub phone: Option<String>, pub id_number: Option<String>,
     pub must_change_password: bool,
-    pub is_default_account: bool,   // true = the one-time default admin
-    pub is_dormant: bool,           // true = default account already used
+    pub is_default_account: bool,
+    pub is_dormant: bool,
     pub created_by: Option<String>,
     pub created_at: String, pub last_login: Option<String>,
 }
@@ -69,7 +69,6 @@ pub struct LoginResult {
     pub success: bool,
     pub user: Option<SessionUser>,
     pub error: Option<String>,
-    /// Shown exactly once after first login with default credential
     pub recovery_code: Option<String>,
 }
 
@@ -105,7 +104,8 @@ pub fn init_auth(app_data_dir: &std::path::Path) -> Result<()> {
         );
     "#)?;
 
-    // Seed the one-time default super_admin if no users exist at all
+    // Seed the one-time default super_admin only if no users exist at all.
+    // is_dormant = 0 so it can be used for first login.
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
     if count == 0 {
         let hash = bcrypt::hash("Kibt@2024", bcrypt::DEFAULT_COST)?;
@@ -137,7 +137,9 @@ pub fn login(
         r#"SELECT id, username, password_hash, role, full_name,
                   must_change_password, is_default_account, is_dormant
            FROM users
-           WHERE username = ?1 COLLATE NOCASE"#,
+           WHERE username = ?1 COLLATE NOCASE
+           ORDER BY is_default_account ASC  -- personal account (0) wins over default (1)
+           LIMIT 1"#,
         params![input.username.trim()],
         |r| Ok((
             r.get::<_,String>(0)?, r.get::<_,String>(1)?,
@@ -158,8 +160,9 @@ pub fn login(
         }
     };
 
-    // Dormant default account cannot log in ever again
-    if is_dormant {
+    // ── FIX: Dormant check only applies to the default bootstrap account.
+    //    Regular user accounts are NEVER blocked by is_dormant.
+    if is_dormant && is_default {
         write_log(&state.0, Some(&id), Some(&username),
             "auth.login_blocked", "auth", None, None,
             Some("Attempt to use dormant default account"));
@@ -177,8 +180,6 @@ pub fn login(
     }
 
     let now = chrono::Utc::now().to_rfc3339();
-
-    // Just update last_login, don't mark as dormant yet
     conn.execute("UPDATE users SET last_login = ?1 WHERE id = ?2", params![now, id])
         .map_err(|e| e.to_string())?;
 
@@ -206,13 +207,16 @@ pub fn get_session(auth: State<'_, AuthState>) -> Option<SessionUser> {
 }
 
 /// First-login profile setup.
-/// Generates a one-time recovery code — shown to user ONCE, stored as bcrypt hash.
+/// - Creates a NEW user row with the personal credentials.
+/// - Marks the original default account row as dormant (so admin/Kibt@2024 stops working).
+/// - Generates a one-time recovery code — shown to user ONCE, stored as bcrypt hash.
 #[tauri::command]
 pub fn setup_profile(
     state: State<'_, AppDataDir>,
     auth: State<'_, AuthState>,
     input: SetupProfileInput,
 ) -> Result<SetupProfileResult, String> {
+    // ── snapshot session before any DB writes ──────────────────────────────
     let session = auth.0.lock().unwrap().clone().ok_or("Not logged in")?;
 
     if input.new_username.trim().len() < 3 { return Err("Username must be at least 3 characters.".into()); }
@@ -220,35 +224,63 @@ pub fn setup_profile(
     if input.full_name.trim().is_empty()   { return Err("Full name is required.".into()); }
 
     let conn = open(&state.0).map_err(|e| e.to_string())?;
-    let taken: i64 = conn.query_row(
+
+    // New username must not collide with any EXISTING account (except the
+    // default admin row that is about to be dormant-ed — same row is OK).
+    let collision: i64 = conn.query_row(
         "SELECT COUNT(*) FROM users WHERE username = ?1 COLLATE NOCASE AND id != ?2",
         params![input.new_username.trim(), session.id], |r| r.get(0),
     ).map_err(|e| e.to_string())?;
-    if taken > 0 { return Err(format!("Username '{}' is already taken.", input.new_username.trim())); }
+    if collision > 0 {
+        return Err(format!("Username '{}' is already taken.", input.new_username.trim()));
+    }
 
     let password_hash = bcrypt::hash(&input.new_password, bcrypt::DEFAULT_COST)
         .map_err(|e| e.to_string())?;
 
-    // Generate a human-readable recovery code: XXXX-XXXX-XXXX-XXXX
-    let code = generate_recovery_code();
-    let code_hash = bcrypt::hash(&code, 4) // cost 4 = fast, recovery codes don't need max security
-        .map_err(|e| e.to_string())?;
+    // Recovery code: XXXX-XXXX-XXXX-XXXX, stored as a low-cost bcrypt hash.
+    let code      = generate_recovery_code();
+    let code_hash = bcrypt::hash(&code, 4).map_err(|e| e.to_string())?;
+    let new_id    = Uuid::new_v4().to_string();
+    let now       = chrono::Utc::now().to_rfc3339();
 
+    // ── FIX: Insert a NEW row for the personal account instead of mutating
+    //    the default admin row.  This preserves the original row for audit
+    //    and lets us mark only it as dormant.
     conn.execute(
-        r#"UPDATE users SET username=?1, password_hash=?2, full_name=?3, email=?4,
-           phone=?5, id_number=?6, must_change_password=0, recovery_code_hash=?7,
-           is_dormant=1
-           WHERE id=?8"#,
-        params![input.new_username.trim(), password_hash, input.full_name.trim(),
-                input.email.trim(), input.phone.trim(), input.id_number.trim(),
-                code_hash, session.id],
+        r#"INSERT INTO users
+           (id, username, password_hash, role, full_name, email, phone, id_number,
+            must_change_password, is_default_account, is_dormant,
+            recovery_code_hash, created_by, created_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+                   0,  0,  0,
+                   ?9, ?10, ?11)"#,
+        params![
+            new_id,
+            input.new_username.trim(),
+            password_hash,
+            session.role,          // carry over the role (super_admin)
+            input.full_name.trim(),
+            input.email.trim(),
+            input.phone.trim(),
+            input.id_number.trim(),
+            code_hash,
+            session.username,      // created_by = "admin"
+            now,
+        ],
+    ).map_err(|e| e.to_string())?;
+
+    // ── FIX: Mark ONLY the original default account row as dormant.
+    conn.execute(
+        "UPDATE users SET is_dormant = 1 WHERE id = ?1 AND is_default_account = 1",
+        params![session.id],
     ).map_err(|e| e.to_string())?;
 
     let updated = SessionUser {
-        id: session.id.clone(),
-        username: input.new_username.trim().to_string(),
-        role: session.role,
-        full_name: Some(input.full_name.trim().to_string()),
+        id:                   new_id.clone(),
+        username:             input.new_username.trim().to_string(),
+        role:                 session.role,
+        full_name:            Some(input.full_name.trim().to_string()),
         must_change_password: false,
     };
 
@@ -259,7 +291,7 @@ pub fn setup_profile(
 
     Ok(SetupProfileResult {
         user: updated,
-        recovery_code: code, // shown ONCE to the user — must save it
+        recovery_code: code,
     })
 }
 
@@ -270,7 +302,7 @@ pub struct SetupProfileResult {
     pub recovery_code: String,
 }
 
-/// Verify a recovery code for a given username (doesn't log them in yet).
+/// Step 1 of recovery: verify the username exists and is a real (non-default) account.
 #[tauri::command]
 pub fn verify_recovery_code(
     state: State<'_, AppDataDir>,
@@ -278,8 +310,10 @@ pub fn verify_recovery_code(
 ) -> Result<RecoveryResult, String> {
     let conn = open(&state.0).map_err(|e| e.to_string())?;
 
+    // ── FIX: look for any active account that is NOT the default bootstrap
+    //    row.  Regular user accounts are never blocked by is_dormant.
     let exists: bool = conn.query_row(
-        "SELECT COUNT(*) FROM users WHERE username = ?1 COLLATE NOCASE AND is_dormant = 0",
+        "SELECT COUNT(*) FROM users WHERE username = ?1 COLLATE NOCASE AND is_default_account = 0",
         params![username.trim()],
         |r| r.get::<_, i64>(0),
     ).map_err(|e| e.to_string())? > 0;
@@ -287,15 +321,14 @@ pub fn verify_recovery_code(
     if !exists {
         return Ok(RecoveryResult {
             success: false,
-            error: Some("Username not found or account is dormant.".into()),
+            error: Some("Username not found. Make sure you are using your personal username, not 'admin'.".into()),
         });
     }
 
     Ok(RecoveryResult { success: true, error: None })
 }
 
-/// Reset password using recovery code. Sets must_change_password = true so
-/// user must set a new proper password on next login.
+/// Step 2 of recovery: verify code + set new password.
 #[tauri::command]
 pub fn reset_password_with_code(
     state: State<'_, AppDataDir>,
@@ -304,13 +337,15 @@ pub fn reset_password_with_code(
     new_password: String,
 ) -> Result<RecoveryResult, String> {
     if new_password.len() < 8 {
-        return Ok(RecoveryResult { success: false, error: Some("Password must be at least 8 characters.".into()) });
+        return Ok(RecoveryResult { success: false,
+            error: Some("Password must be at least 8 characters.".into()) });
     }
 
     let conn = open(&state.0).map_err(|e| e.to_string())?;
 
+    // ── FIX: query against is_default_account = 0 only (regular accounts).
     let row = conn.query_row(
-        "SELECT id, recovery_code_hash FROM users WHERE username = ?1 COLLATE NOCASE AND is_dormant = 0",
+        "SELECT id, recovery_code_hash FROM users WHERE username = ?1 COLLATE NOCASE AND is_default_account = 0",
         params![username.trim()],
         |r| Ok((r.get::<_,String>(0)?, r.get::<_,Option<String>>(1)?)),
     );
@@ -497,7 +532,6 @@ pub fn reset_user_password(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn generate_recovery_code() -> String {
-    // 4 groups of 4 alphanumeric chars — easy to write down
     let chars: Vec<char> = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".chars().collect();
     let mut groups = Vec::new();
     for _ in 0..4 {

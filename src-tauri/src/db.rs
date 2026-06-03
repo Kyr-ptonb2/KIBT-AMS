@@ -99,6 +99,45 @@ CREATE TABLE IF NOT EXISTS app_config (
 "#;
 
 fn migrate(conn: &Connection) -> Result<()> {
+    // ── AUTH SELF-HEAL (fixes databases created before the auth rewrite) ─────
+    //
+    // Old behaviour: setup_profile mutated the default admin row in place,
+    // setting is_dormant=1 on it — which then blocked ALL logins for that user.
+    //
+    // Fix: if we find a user row that is:
+    //   • is_default_account = 1  AND  is_dormant = 1  (correctly dormant)
+    //   • must_change_password = 0  (already completed setup — so the mutation
+    //     happened but no new row was inserted)
+    //
+    // …we know the old bug hit this DB.  We create a new personal account row
+    // using the data already stored in that row (the username/password the user
+    // chose is still there), clear is_dormant on that copy so they can log in,
+    // and re-set is_dormant=1 on the original default row.
+    {
+        // Check whether the broken pattern exists
+        let broken: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM users WHERE is_default_account=1 AND is_dormant=1 AND must_change_password=0",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+
+        if broken > 0 {
+            // The old bug mutated the default admin row in-place, storing the
+            // user's real credentials there but also setting is_default_account=1
+            // and is_dormant=1, which blocked all future logins.
+            //
+            // Simplest fix: flip those flags so the row becomes a normal
+            // personal account that login() will accept.
+            let fixed = conn.execute(
+                "UPDATE users SET is_default_account = 0, is_dormant = 0
+                 WHERE is_default_account = 1 AND is_dormant = 1 AND must_change_password = 0",
+                [],
+            ).unwrap_or(0);
+            eprintln!("[db/migrate] auth self-heal: repaired {} broken account row(s)", fixed);
+        }
+    }
+    // ── END AUTH SELF-HEAL ────────────────────────────────────────────────────
+
     // Add new columns to existing events table
     let mut stmt = conn.prepare("PRAGMA table_info(events)")?;
     let event_cols: Vec<String> = stmt.query_map([], |r| r.get::<_, String>(1))?

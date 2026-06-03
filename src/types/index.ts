@@ -53,7 +53,7 @@ export interface QueueItemInput {
 }
 
 export interface ScanResult {
-  scanId: string; method: "gemini" | "tesseract" | "manual";
+  scanId: string; method: "gemini" | "manual";
   rows: ParticipantInput[]; extractedCount: number;
   accuracyNote?: string; detectedColumns: string[];
 }
@@ -94,7 +94,7 @@ export interface EventSummary {
 
 export interface AppConfig {
   geminiApiKey?: string; defaultRegion?: string;
-  scanMethodPreference: "auto" | "online" | "offline";
+  scanMethodPreference: "online";
   autoUpdate: boolean; databasePath?: string;
 }
 
