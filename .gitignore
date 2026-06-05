@@ -1,0 +1,24 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/WixTools/
+*.db
+*.db-shm
+*.db-wal
+
+# Tesseract model (large binary — download separately per README)
+assets/tessdata/eng.traineddata
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+*.log
+dist-ssr/
