@@ -67,12 +67,18 @@ pub struct BatchStatus {
 
 #[tauri::command]
 pub async fn check_connectivity() -> bool {
-    use std::net::TcpStream;
-    use std::time::Duration;
-    TcpStream::connect_timeout(
-        &"8.8.8.8:443".parse().unwrap(),
-        Duration::from_secs(2),
-    ).is_ok()
+    // Run the blocking TCP connect on a thread-pool thread so the Tauri
+    // async runtime (tokio) is never blocked by the 2-second timeout.
+    tokio::task::spawn_blocking(|| {
+        use std::net::TcpStream;
+        use std::time::Duration;
+        TcpStream::connect_timeout(
+            &"8.8.8.8:443".parse().unwrap(),
+            Duration::from_secs(2),
+        ).is_ok()
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// Scan a single sheet image using Gemini (online only).

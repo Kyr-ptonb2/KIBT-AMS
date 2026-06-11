@@ -91,7 +91,7 @@ export default function LoginPage() {
   if (screen === "login") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-kibt-green-dark to-kibt-green flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
+        <div className="rounded-2xl shadow-2xl w-full max-w-sm p-8" style={{ backgroundColor: "var(--bg-card)", boxShadow: "0 8px 40px rgb(0 0 0 / 0.25)" }}>
           <div className="text-center mb-8">
             <div className="w-16 h-16 rounded-2xl bg-kibt-green flex items-center justify-center mx-auto mb-4">
               <Briefcase size={32} className="text-white" />

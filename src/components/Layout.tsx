@@ -44,7 +44,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen overflow-hidden page-bg">
       {/* ── Sidebar ─────────────────────────────────────────────── */}
       <aside className="w-56 flex-shrink-0 bg-kibt-green-dark flex flex-col">
         {/* Brand */}
@@ -105,9 +105,9 @@ export default function Layout() {
           </button>
 
           {showUserMenu && (
-            <div className="absolute bottom-full left-3 right-3 mb-1 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
-              <div className="px-4 py-3 border-b border-gray-50">
-                <p className="text-sm font-semibold text-gray-800">
+            <div className="absolute bottom-full left-3 right-3 mb-1 rounded-xl shadow-xl overflow-hidden z-50" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
+              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-heading)" }}>
                   {currentUser?.fullName ?? currentUser?.username}
                 </p>
                 <p className="text-xs text-gray-400">@{currentUser?.username}</p>

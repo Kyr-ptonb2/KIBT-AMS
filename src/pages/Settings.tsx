@@ -2,15 +2,16 @@ import { useState, useEffect } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   Key, MapPin, Database, HardDrive, RotateCcw,
-  Save, Eye, EyeOff, CheckCircle, ExternalLink
+  Save, Eye, EyeOff, CheckCircle, ExternalLink, Sun, Moon
 } from "lucide-react";
 import { useStore } from "../store";
+import { Palette } from "lucide-react";
 import { getConfig, saveConfig, backupDatabase, restoreDatabase } from "../hooks/useTauri";
 import { AppConfig, KIBT_REGIONS } from "../types";
 import PageHeader from "../components/PageHeader";
 
 export default function Settings() {
-  const { setConfig, addToast } = useStore();
+  const { setConfig, addToast, theme, setTheme } = useStore();
   const [config, setLocalConfig] = useState<AppConfig | null>(null);
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,7 +63,7 @@ export default function Settings() {
   if (!config) return <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Loading settings…</div>;
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title="Settings"
         subtitle="Application configuration and database management"
@@ -75,6 +76,48 @@ export default function Settings() {
       />
 
       <div className="px-8 py-6 max-w-2xl space-y-5">
+        {/* ── Appearance ──────────────────────────────────────────────── */}
+        <div className="card p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Palette size={16} className="text-kibt-green" />
+            <h3 className="text-sm font-semibold" style={{ color: "var(--text-heading)" }}>Appearance</h3>
+          </div>
+          <div>
+            <label className="label">Theme</label>
+            <div className="flex gap-3 mt-1">
+              <button
+                onClick={() => setTheme("light")}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all text-sm font-medium ${
+                  theme === "light"
+                    ? "border-kibt-green bg-kibt-green/5 text-kibt-green"
+                    : "border-transparent hover:border-gray-200"
+                }`}
+                style={{ backgroundColor: theme === "light" ? undefined : "var(--bg-muted)", color: theme === "light" ? undefined : "var(--text-secondary)" }}
+              >
+                <Sun size={16} />
+                Light
+                {theme === "light" && <CheckCircle size={13} className="ml-auto" />}
+              </button>
+              <button
+                onClick={() => setTheme("dark")}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all text-sm font-medium ${
+                  theme === "dark"
+                    ? "border-kibt-green bg-kibt-green/5 text-kibt-green"
+                    : "border-transparent hover:border-gray-200"
+                }`}
+                style={{ backgroundColor: theme === "dark" ? undefined : "var(--bg-muted)", color: theme === "dark" ? undefined : "var(--text-secondary)" }}
+              >
+                <Moon size={16} />
+                Dark
+                {theme === "dark" && <CheckCircle size={13} className="ml-auto" />}
+              </button>
+            </div>
+            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+              Theme is saved automatically and persists across sessions.
+            </p>
+          </div>
+        </div>
+
         {/* ── Gemini API key ────────────────────────────────────────── */}
         <div className="card p-5 space-y-4">
           <div className="flex items-center gap-2">

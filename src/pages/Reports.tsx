@@ -20,7 +20,7 @@ export default function Reports() {
   );
 
   if (!report || report.totalParticipants === 0) return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title={`Annual Report — FY ${selectedFY}`}
         subtitle="Kenya Institute of Business Training — Statistical Summary"
@@ -39,7 +39,7 @@ export default function Reports() {
     : "0";
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title={`Annual Report — FY ${selectedFY}`}
         subtitle="Kenya Institute of Business Training — Statistical Summary"

@@ -33,7 +33,7 @@ export default function Dashboard() {
     : 0;
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title={`Dashboard — FY ${selectedFY}`}
         subtitle="Kenya Institute of Business Training — Attendance Overview"

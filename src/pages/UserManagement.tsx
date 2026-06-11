@@ -61,7 +61,7 @@ export default function UserManagement() {
   };
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title="User Management"
         subtitle="Manage system accounts and access levels"

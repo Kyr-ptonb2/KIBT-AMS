@@ -7,6 +7,8 @@ import {
   ColumnDef,
   CustomTableDef,
   CustomTableRow,
+  TableScanResult,
+  TableBatchScanResult,
   Event,
   ExportFilter,
   Participant,
@@ -107,6 +109,17 @@ export const exportCustomTableCsv = (tableId: string, path: string) =>
 
 export const exportCustomTableExcel = (tableId: string, path: string) =>
   invoke<boolean>("export_custom_table_excel", { tableId, path });
+
+
+
+export const scanIntoCustomTable = (input: {
+  tableId: string; imageBytes: number[]; filename: string;
+}) => invoke<TableScanResult>("scan_into_custom_table", { input });
+
+export const scanBatchIntoCustomTable = (input: {
+  tableId: string;
+  items: { itemId: string; imageBytes: number[]; filename: string }[];
+}) => invoke<TableBatchScanResult>("scan_batch_into_custom_table", { input });
 
 export const checkConnectivity = () => invoke<boolean>("check_connectivity");
 

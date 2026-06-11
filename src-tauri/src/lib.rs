@@ -99,6 +99,8 @@ pub fn run() {
             custom_tables::create_from_list,
             custom_tables::export_custom_table_csv,
             custom_tables::export_custom_table_excel,
+            custom_tables::scan_into_custom_table,
+            custom_tables::scan_batch_into_custom_table,
         ])
         .run(tauri::generate_context!())
         .expect("error while running KIBT-AMS");

@@ -73,7 +73,7 @@ export default function Export() {
   };
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title="Export Data"
         subtitle="Download attendance records as Excel or CSV"

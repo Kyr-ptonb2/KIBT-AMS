@@ -17,12 +17,12 @@ use crate::logs::write_log;
 use anyhow::Result;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Emitter, State};
 use uuid::Uuid;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnDef {
     pub name: String,
@@ -576,4 +576,320 @@ fn csv_escape(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+// ── Scan into Custom Table (fixed columns only) ───────────────────────────────
+//
+// Scans an image with Gemini and inserts rows directly into the table.
+// Only maps to EXISTING columns — no new columns are ever created.
+// Unrecognised detected columns are ignored silently.
+
+use crate::scan::gemini;
+use crate::scan::{get_gemini_key, save_scan_record, friendly_api_error};
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableScanResult {
+    pub scan_id: String,
+    pub rows_inserted: usize,
+    pub detected_columns: Vec<String>,
+    pub matched_columns: Vec<String>,   // detected cols mapped to table cols
+    pub skipped_columns: Vec<String>,   // detected cols with no table match
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableScanInput {
+    pub table_id: String,
+    pub image_bytes: Vec<u8>,
+    pub filename: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableBatchScanInput {
+    pub table_id: String,
+    pub items: Vec<TableBatchItem>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TableBatchItem {
+    pub item_id: String,
+    pub image_bytes: Vec<u8>,
+    pub filename: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TableBatchScanResult {
+    pub batch_id: String,
+    pub results: Vec<TableBatchItemResult>,
+    pub total_inserted: usize,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TableBatchItemResult {
+    pub item_id: String,
+    pub filename: String,
+    pub status: String,
+    pub rows_inserted: usize,
+    pub matched_columns: Vec<String>,
+    pub skipped_columns: Vec<String>,
+    pub error: Option<String>,
+}
+
+/// Scan a single image and insert rows into a custom table.
+/// Only maps to columns that already exist in the table schema.
+#[tauri::command]
+pub async fn scan_into_custom_table(
+    state: State<'_, AppDataDir>,
+    auth: State<'_, AuthState>,
+    input: TableScanInput,
+) -> Result<TableScanResult, String> {
+    let session = auth.0.lock().unwrap().clone().ok_or("Not logged in")?;
+    let app_data_dir = state.0.clone();
+    let def = get_custom_table(state.clone(), input.table_id.clone())?;
+
+    let gemini_key = get_gemini_key()
+        .map_err(|_| "Gemini API key not configured. Set it in Settings.".to_string())?;
+
+    let scan_result = gemini::scan_with_gemini(&input.image_bytes, &gemini_key)
+        .await
+        .map_err(|e| friendly_api_error(&e.to_string()))?;
+
+    let cols_json = serde_json::to_string(&scan_result.detected_columns).ok();
+    let scan_id = save_scan_record(
+        &app_data_dir, &def.id, None, None,
+        &input.image_bytes, &input.filename, "gemini",
+        scan_result.rows.len(), &None, cols_json.as_deref(),
+    ).map_err(|e| e.to_string())?;
+
+    let mapping = build_col_mapping(&scan_result.detected_columns, &def.columns);
+    let rows_data = build_rows(&scan_result.rows, &def.columns, &mapping);
+    let rows_inserted = insert_table_rows(
+        &app_data_dir, &def.id, &session.username, &rows_data
+    ).map_err(|e| e.to_string())?;
+
+    let matched_columns: Vec<String> = mapping.values().cloned().collect();
+    let skipped_columns: Vec<String> = scan_result.detected_columns.iter()
+        .filter(|c| !mapping.contains_key(c.as_str()))
+        .cloned().collect();
+
+    write_log(&app_data_dir, Some(&session.id), Some(&session.username),
+        "custom_table.scan", "custom_table", Some(&def.id),
+        Some(&format!("{} rows from {}", rows_inserted, input.filename)), None);
+
+    Ok(TableScanResult { scan_id, rows_inserted, detected_columns: scan_result.detected_columns, matched_columns, skipped_columns })
+}
+
+/// Scan multiple images into a custom table (batch, concurrent, rate-limited).
+#[tauri::command]
+pub async fn scan_batch_into_custom_table(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppDataDir>,
+    auth: State<'_, AuthState>,
+    input: TableBatchScanInput,
+) -> Result<TableBatchScanResult, String> {
+    let session = auth.0.lock().unwrap().clone().ok_or("Not logged in")?;
+    let app_data_dir = state.0.clone();
+    let batch_id = Uuid::new_v4().to_string();
+    let def = get_custom_table(state.clone(), input.table_id.clone())?;
+
+    let gemini_key = get_gemini_key()
+        .map_err(|_| "Gemini API key not configured.".to_string())?;
+
+    let total = input.items.len();
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+    let rl  = std::sync::Arc::new(tokio::sync::Mutex::new(std::time::Instant::now()));
+    let mut handles = Vec::new();
+
+    for (index, item) in input.items.into_iter().enumerate() {
+        let app_data_c = app_data_dir.clone();
+        let key_c      = gemini_key.clone();
+        let def_c      = def.clone();
+        let session_c  = session.clone();
+        let sem_c      = sem.clone();
+        let rl_c       = rl.clone();
+        let ah_c       = app_handle.clone();
+        let bid        = batch_id.clone();
+
+        let handle = tokio::spawn(async move {
+            let _permit = sem_c.acquire().await.ok();
+            {
+                let mut last = rl_c.lock().await;
+                let elapsed = last.elapsed();
+                if elapsed < std::time::Duration::from_secs(1) {
+                    tokio::time::sleep(std::time::Duration::from_secs(1) - elapsed).await;
+                }
+                *last = std::time::Instant::now();
+            }
+
+            let _ = ah_c.emit("table_scan_progress", serde_json::json!({
+                "batchId": bid, "itemId": item.item_id,
+                "index": index, "total": total,
+                "status": "processing", "filename": item.filename,
+            }));
+
+            match gemini::scan_with_gemini(&item.image_bytes, &key_c).await {
+                Ok(scan_result) => {
+                    let cols_json = serde_json::to_string(&scan_result.detected_columns).ok();
+                    let _ = save_scan_record(
+                        &app_data_c, &def_c.id, Some(&bid),
+                        Some((index + 1) as i32), &item.image_bytes,
+                        &item.filename, "gemini", scan_result.rows.len(),
+                        &None, cols_json.as_deref(),
+                    );
+
+                    let mapping = build_col_mapping(&scan_result.detected_columns, &def_c.columns);
+                    let rows_data = build_rows(&scan_result.rows, &def_c.columns, &mapping);
+                    let inserted = insert_table_rows(
+                        &app_data_c, &def_c.id, &session_c.username, &rows_data
+                    ).unwrap_or(0);
+
+                    let matched: Vec<String> = mapping.values().cloned().collect();
+                    let skipped: Vec<String> = scan_result.detected_columns.iter()
+                        .filter(|c| !mapping.contains_key(c.as_str()))
+                        .cloned().collect();
+
+                    let _ = ah_c.emit("table_scan_progress", serde_json::json!({
+                        "batchId": bid, "itemId": item.item_id,
+                        "index": index, "total": total, "status": "done",
+                        "filename": item.filename, "rowsInserted": inserted,
+                    }));
+
+                    Some(TableBatchItemResult {
+                        item_id: item.item_id, filename: item.filename,
+                        status: "done".into(), rows_inserted: inserted,
+                        matched_columns: matched, skipped_columns: skipped,
+                        error: None,
+                    })
+                }
+                Err(e) => {
+                    let msg = friendly_api_error(&e.to_string());
+                    let _ = ah_c.emit("table_scan_progress", serde_json::json!({
+                        "batchId": bid, "itemId": item.item_id,
+                        "index": index, "total": total,
+                        "status": "failed", "filename": item.filename, "error": msg,
+                    }));
+                    Some(TableBatchItemResult {
+                        item_id: item.item_id, filename: item.filename,
+                        status: "failed".into(), rows_inserted: 0,
+                        matched_columns: vec![], skipped_columns: vec![],
+                        error: Some(msg),
+                    })
+                }
+            }
+        });
+        handles.push((index, handle));
+    }
+
+    let mut indexed = Vec::new();
+    let mut total_inserted = 0usize;
+    for (idx, handle) in handles {
+        if let Ok(Some(r)) = handle.await {
+            total_inserted += r.rows_inserted;
+            indexed.push((idx, r));
+        }
+    }
+    indexed.sort_by_key(|(i, _)| *i);
+    let results = indexed.into_iter().map(|(_, r)| r).collect();
+
+    write_log(&app_data_dir, Some(&session.id), Some(&session.username),
+        "custom_table.batch_scan", "custom_table", Some(&def.id),
+        Some(&format!("{} total rows", total_inserted)), None);
+
+    Ok(TableBatchScanResult { batch_id, results, total_inserted })
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn build_col_mapping(
+    detected: &[String],
+    table_cols: &[ColumnDef],
+) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for det in detected {
+        let dn = norm(det);
+        if let Some(tc) = table_cols.iter().find(|c| norm(&c.name) == dn) {
+            map.insert(det.clone(), tc.name.clone()); continue;
+        }
+        if let Some(tc) = table_cols.iter().find(|c| {
+            let cn = norm(&c.name);
+            dn.contains(&cn) || cn.contains(&dn)
+        }) {
+            map.insert(det.clone(), tc.name.clone());
+        }
+    }
+    map
+}
+
+fn norm(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == ' ')
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn build_rows(
+    rows: &[crate::participants::ParticipantInput],
+    table_cols: &[ColumnDef],
+    mapping: &std::collections::HashMap<String, String>,
+) -> Vec<serde_json::Value> {
+    let rev: std::collections::HashMap<&str, &str> = mapping.iter()
+        .map(|(det, tc)| (tc.as_str(), det.as_str()))
+        .collect();
+
+    rows.iter().map(|row| {
+        let mut obj = serde_json::Map::new();
+        for tc in table_cols {
+            if let Some(&det) = rev.get(tc.name.as_str()) {
+                let dn = norm(det);
+                let val = if dn.contains("name")                       { Some(row.name.clone()) }
+                    else if dn.contains("phone") || dn.contains("tel") { row.phone.clone() }
+                    else if dn.contains("gender") || dn.contains("sex"){ row.gender.clone() }
+                    else if dn.contains("age")                          { row.age_category.clone() }
+                    else if dn.contains("business")                     { row.business_type.clone() }
+                    else if dn.contains("consent")                      { row.consent.clone() }
+                    else if dn.contains("location") || dn.contains("area") { row.location.clone() }
+                    else if dn.contains("id")                           { row.id_number.clone() }
+                    else {
+                        row.extra_fields.as_ref()
+                            .and_then(|ef| serde_json::from_str::<serde_json::Value>(ef).ok())
+                            .and_then(|v| v.get(det).and_then(|x| x.as_str()).map(str::to_string))
+                    };
+                if let Some(v) = val { if !v.is_empty() { obj.insert(tc.name.clone(), serde_json::Value::String(v)); } }
+            }
+        }
+        serde_json::Value::Object(obj)
+    })
+    .filter(|o| o.as_object().map(|m| !m.is_empty()).unwrap_or(false))
+    .collect()
+}
+
+fn insert_table_rows(
+    app_data_dir: &std::path::Path,
+    table_id: &str,
+    username: &str,
+    rows: &[serde_json::Value],
+) -> anyhow::Result<usize> {
+    let mut conn = open(app_data_dir)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let tx = conn.transaction()?;
+    let mut count = 0usize;
+    for row in rows {
+        if let serde_json::Value::Object(ref m) = row { if m.is_empty() { continue; } }
+        let id       = Uuid::new_v4().to_string();
+        let data_str = serde_json::to_string(row)?;
+        tx.execute(
+            "INSERT INTO custom_table_rows (id, table_id, data_json, added_by, added_at) VALUES (?1,?2,?3,?4,?5)",
+            params![id, table_id, data_str, username, now],
+        )?;
+        count += 1;
+    }
+    tx.commit()?;
+    Ok(count)
 }

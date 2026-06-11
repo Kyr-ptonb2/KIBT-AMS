@@ -2,22 +2,25 @@
 // Admins can create tables with custom columns, paste a quick list,
 // view/edit rows, and export to Excel or CSV.
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   Plus, Table2, Trash2, Pencil, Download, ChevronRight,
   ArrowLeft, X, Save, Loader, List, FileSpreadsheet,
-  FileText, Link, Unlink, Search, CheckCircle
+  FileText, Link, Unlink, Search, CheckCircle, ScanLine, Camera, AlertCircle, Image
 } from "lucide-react";
 import {
   getCustomTables, getCustomTable, getCustomTableRows,
   createCustomTable, updateCustomTable, deleteCustomTable,
   upsertCustomTableRows, updateCustomTableRow, deleteCustomTableRow,
   createFromList, exportCustomTableCsv, exportCustomTableExcel,
+  scanIntoCustomTable, scanBatchIntoCustomTable,
   getEvents,
 } from "../hooks/useTauri";
-import { ColumnDef, CustomTableDef, CustomTableRow } from "../types";
+import { listen } from "@tauri-apps/api/event";
+
+import { ColumnDef, CustomTableDef, CustomTableRow, TableScanResult, TableBatchItemResult } from "../types";
 import { useStore } from "../store";
 import PageHeader from "../components/PageHeader";
 
@@ -49,7 +52,7 @@ export default function CustomTables() {
   const handleBack = () => { setSelectedTableId(null); setView("list"); };
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       {view === "list" && (
         <>
           <PageHeader
@@ -209,6 +212,7 @@ function TableView({ tableId, isAdmin, onBack, selectedFY }: {
   const [showAddRows, setShowAddRows]   = useState(false);
   const [newRows, setNewRows]           = useState<Record<string, string>[]>([]);
   const [editMeta, setEditMeta]         = useState(false);
+  const [showScan, setShowScan]           = useState(false);
   const [metaName, setMetaName]         = useState("");
   const [metaDesc, setMetaDesc]         = useState("");
   const [metaEventId, setMetaEventId]   = useState<string>("");
@@ -303,7 +307,7 @@ function TableView({ tableId, isAdmin, onBack, selectedFY }: {
   };
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title={editMeta ? (
           <input className="input text-lg font-bold py-1 w-72"
@@ -338,6 +342,11 @@ function TableView({ tableId, isAdmin, onBack, selectedFY }: {
             <button className="btn-secondary text-xs" onClick={() => handleExport("csv")}>
               <FileText size={13} /> CSV
             </button>
+            {isAdmin && !showScan && (
+              <button className="btn-secondary text-xs" onClick={() => setShowScan(true)}>
+                <ScanLine size={13} /> Scan Into Table
+              </button>
+            )}
             {isAdmin && !showAddRows && (
               <button className="btn-primary text-xs" onClick={initNewRows}>
                 <Plus size={13} /> Add Rows
@@ -378,6 +387,21 @@ function TableView({ tableId, isAdmin, onBack, selectedFY }: {
           <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 rounded-xl px-4 py-2.5">
             <Link size={12} /> Linked to event: <strong>{def.eventTitle}</strong>
           </div>
+        )}
+
+        {/* Scan panel */}
+        {showScan && (
+          <ScanPanel
+            def={def}
+            onClose={() => setShowScan(false)}
+            onDone={(count) => {
+              qc.invalidateQueries({ queryKey: ["custom_table_rows", tableId] });
+              qc.invalidateQueries({ queryKey: ["custom_table", tableId] });
+              qc.invalidateQueries({ queryKey: ["custom_tables"] });
+              addToast({ type: "success", message: `${count} row${count !== 1 ? "s" : ""} scanned and saved.` });
+              setShowScan(false);
+            }}
+          />
         )}
 
         {/* Add rows panel */}
@@ -564,7 +588,7 @@ function NewTableForm({ onBack, onCreated, selectedFY }: {
   };
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader title="New Custom Table" subtitle="Define columns for your table"
         actions={<button className="btn-secondary text-xs" onClick={onBack}><ArrowLeft size={13} /> Back</button>} />
       <div className="px-8 py-6 max-w-2xl space-y-5">
@@ -692,7 +716,7 @@ function QuickListForm({ onBack, onCreated, selectedFY }: {
   };
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader title="Quick List" subtitle="Paste a list — each item becomes a row"
         actions={<button className="btn-secondary text-xs" onClick={onBack}><ArrowLeft size={13} /> Back</button>} />
       <div className="px-8 py-6 max-w-2xl space-y-5">
@@ -768,6 +792,271 @@ function QuickListForm({ onBack, onCreated, selectedFY }: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Scan Panel ─────────────────────────────────────────────────────────────
+interface ScanPanelProps {
+  def: CustomTableDef;
+  onClose: () => void;
+  onDone: (rowsInserted: number) => void;
+}
+
+interface BatchQueueItem {
+  itemId: string; file: File; previewUrl: string;
+  status: "waiting" | "processing" | "done" | "failed";
+  rowsInserted?: number; error?: string;
+}
+
+function ScanPanel({ def, onClose, onDone }: ScanPanelProps) {
+  const { addToast } = useStore();
+  const [mode, setMode]             = useState<"single" | "batch">("single");
+  const [singleFile, setSingleFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [scanning, setScanning]     = useState(false);
+  const [result, setResult]         = useState<TableScanResult | null>(null);
+  const [queue, setQueue]           = useState<BatchQueueItem[]>([]);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchDone, setBatchDone]   = useState(false);
+  const [totalInserted, setTotalInserted] = useState(0);
+  const singleRef = useRef<HTMLInputElement>(null);
+  const batchRef  = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<any>("table_scan_progress", (ev) => {
+      const p = ev.payload;
+      setQueue(prev => prev.map(item =>
+        item.itemId === p.itemId
+          ? { ...item,
+              status: p.status === "processing" ? "processing" : p.status === "done" ? "done" : "failed",
+              rowsInserted: p.rowsInserted, error: p.error }
+          : item
+      ));
+    }).then(fn => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    queue.forEach(i => URL.revokeObjectURL(i.previewUrl));
+  }, []);
+
+  const handleSingleFile = (f: File) => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setSingleFile(f); setPreviewUrl(URL.createObjectURL(f)); setResult(null);
+  };
+
+  const runSingle = async () => {
+    if (!singleFile) return;
+    setScanning(true);
+    try {
+      const bytes = Array.from(new Uint8Array(await singleFile.arrayBuffer()));
+      const r = await scanIntoCustomTable({ tableId: def.id, imageBytes: bytes, filename: singleFile.name });
+      setResult(r);
+    } catch (e: any) { addToast({ type: "error", message: String(e) }); }
+    finally { setScanning(false); }
+  };
+
+  const addFiles = (files: FileList) => {
+    const items: BatchQueueItem[] = Array.from(files).map(f => ({
+      itemId: crypto.randomUUID(), file: f,
+      previewUrl: URL.createObjectURL(f), status: "waiting",
+    }));
+    setQueue(prev => [...prev, ...items]);
+    setBatchDone(false);
+  };
+
+  const runBatch = async () => {
+    if (!queue.length) return;
+    setBatchRunning(true);
+    try {
+      const items = await Promise.all(queue.map(async (item) => ({
+        itemId: item.itemId,
+        imageBytes: Array.from(new Uint8Array(await item.file.arrayBuffer())),
+        filename: item.file.name,
+      })));
+      const r = await scanBatchIntoCustomTable({ tableId: def.id, items });
+      setTotalInserted(r.totalInserted);
+      setBatchDone(true);
+      onDone(r.totalInserted);
+    } catch (e: any) { addToast({ type: "error", message: String(e) }); }
+    finally { setBatchRunning(false); }
+  };
+
+  return (
+    <div className="card border border-kibt-green/20 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ScanLine size={15} className="text-kibt-green" />
+          <span className="text-sm font-semibold" style={{ color: "var(--text-heading)" }}>
+            Scan into "{def.name}"
+          </span>
+        </div>
+        <button className="p-1 text-gray-400 hover:text-gray-600" onClick={onClose}><X size={14} /></button>
+      </div>
+
+      {/* Table columns */}
+      <div className="flex flex-wrap gap-1.5 items-center">
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>Columns:</span>
+        {def.columns.map(c => (
+          <span key={c.name} className="px-2 py-0.5 bg-kibt-green/10 text-kibt-green rounded-full text-xs font-medium">{c.name}</span>
+        ))}
+      </div>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+        Gemini will match detected columns to the table columns above. Unrecognised columns are ignored.
+      </p>
+
+      {/* Mode toggle */}
+      <div className="flex rounded-lg border overflow-hidden w-fit" style={{ borderColor: "var(--border)" }}>
+        {(["single","batch"] as const).map(m => (
+          <button key={m} onClick={() => setMode(m)}
+            className={`px-4 py-1.5 text-xs font-medium transition-colors ${
+              mode === m ? "bg-kibt-green text-white" : "hover:opacity-80"
+            }`}
+            style={mode !== m ? { backgroundColor: "var(--bg-card)", color: "var(--text-secondary)" } : {}}
+          >
+            {m === "single" ? "Single Image" : "Batch"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Single ── */}
+      {mode === "single" && (
+        <div className="space-y-3">
+          <div
+            className="border-2 border-dashed rounded-xl cursor-pointer transition-colors hover:border-kibt-green/40"
+            style={{ borderColor: "var(--border)" }}
+            onClick={() => singleRef.current?.click()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleSingleFile(f); }}
+          >
+            {previewUrl
+              ? <img src={previewUrl} alt="preview" className="w-full max-h-52 object-contain rounded-xl" />
+              : <div className="flex flex-col items-center py-10 gap-2" style={{ color: "var(--text-muted)" }}>
+                  <Camera size={30} /><p className="text-sm">Drop image or click to browse</p>
+                </div>
+            }
+          </div>
+          <input ref={singleRef} type="file" accept="image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleSingleFile(f); }} />
+
+          {singleFile && !result && (
+            <button className="btn-primary w-full justify-center" onClick={runSingle} disabled={scanning}>
+              {scanning ? <><Loader size={13} className="animate-spin" /> Scanning…</> : <><ScanLine size={13} /> Scan & Save</>}
+            </button>
+          )}
+
+          {result && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 rounded-lg border border-green-100">
+                <CheckCircle size={13} className="text-green-600" />
+                <span className="text-sm font-semibold text-green-800">{result.rowsInserted} rows inserted</span>
+              </div>
+              {result.matchedColumns.length > 0 && (
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Matched: {result.matchedColumns.join(", ")}
+                </p>
+              )}
+              {result.skippedColumns.length > 0 && (
+                <div className="flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                  <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />
+                  Ignored (not in table): {result.skippedColumns.join(", ")}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button className="btn-secondary text-xs flex-1 justify-center"
+                  onClick={() => { setSingleFile(null); setPreviewUrl(null); setResult(null); }}>
+                  Scan Another
+                </button>
+                <button className="btn-primary text-xs flex-1 justify-center"
+                  onClick={() => onDone(result.rowsInserted)}>
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Batch ── */}
+      {mode === "batch" && (
+        <div className="space-y-3">
+          {!batchRunning && !batchDone && (
+            <div
+              className="border-2 border-dashed rounded-xl cursor-pointer py-8 text-center transition-colors hover:border-kibt-green/40"
+              style={{ borderColor: "var(--border)" }}
+              onClick={() => batchRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}
+            >
+              <Image size={26} className="mx-auto mb-2" style={{ color: "var(--text-muted)" }} />
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Drop multiple images or click to browse</p>
+            </div>
+          )}
+          <input ref={batchRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={e => { if (e.target.files?.length) addFiles(e.target.files); }} />
+
+          {queue.length > 0 && (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {queue.map(item => (
+                <div key={item.itemId}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-xs ${
+                    item.status === "done" ? "border-green-100 bg-green-50" :
+                    item.status === "failed" ? "border-red-100 bg-red-50" :
+                    item.status === "processing" ? "border-blue-100 bg-blue-50" :
+                    "border-gray-100"
+                  }`}
+                  style={item.status === "waiting" ? { backgroundColor: "var(--bg-muted)" } : {}}
+                >
+                  <img src={item.previewUrl} alt="" className="w-7 h-7 rounded object-cover flex-shrink-0" />
+                  <span className="flex-1 truncate" style={{ color: "var(--text-primary)" }}>{item.file.name}</span>
+                  {item.status === "waiting"    && <span style={{ color: "var(--text-muted)" }}>Waiting</span>}
+                  {item.status === "processing" && <Loader size={11} className="animate-spin text-blue-500" />}
+                  {item.status === "done"       && <span className="text-green-600 font-medium flex items-center gap-1"><CheckCircle size={11} />{item.rowsInserted} rows</span>}
+                  {item.status === "failed"     && <span className="text-red-500 flex items-center gap-1"><AlertCircle size={11} />{item.error ?? "Failed"}</span>}
+                  {!batchRunning && !batchDone && (
+                    <button className="text-gray-300 hover:text-red-400"
+                      onClick={() => setQueue(prev => prev.filter(i => i.itemId !== item.itemId))}>
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {batchDone && (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 rounded-lg border border-green-100">
+              <CheckCircle size={13} className="text-green-600" />
+              <span className="text-sm font-semibold text-green-800">{totalInserted} total rows inserted</span>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {!batchDone && queue.length > 0 && !batchRunning && (
+              <button className="btn-primary flex-1 justify-center text-xs" onClick={runBatch}>
+                <ScanLine size={13} /> Scan {queue.length} Image{queue.length > 1 ? "s" : ""}
+              </button>
+            )}
+            {batchRunning && (
+              <div className="flex-1 flex items-center justify-center gap-2 text-xs py-2 text-blue-600">
+                <Loader size={13} className="animate-spin" /> Scanning…
+              </div>
+            )}
+            {batchDone && (
+              <div className="flex gap-2 flex-1">
+                <button className="btn-secondary text-xs flex-1 justify-center"
+                  onClick={() => { setQueue([]); setBatchDone(false); setTotalInserted(0); }}>
+                  Scan More
+                </button>
+                <button className="btn-primary text-xs flex-1 justify-center" onClick={onClose}>Done</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import * as XLSX from "xlsx";
+import { Workbook } from "exceljs";
 import Papa from "papaparse";
 import {
   Upload, FileSpreadsheet, FileText, CheckCircle,
@@ -130,14 +130,27 @@ export default function ImportParticipants() {
       reader.readAsText(f);
     } else if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<Record<string, string>>(ws, {
-          header: 0, defval: "", raw: false,
+      reader.onload = async (e) => {
+        const wb = new Workbook();
+        await wb.xlsx.load(e.target?.result as ArrayBuffer);
+        const ws = wb.worksheets[0];
+        if (!ws) return;
+        // First row = headers
+        const headers: string[] = [];
+        ws.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
+          headers.push(String(cell.value ?? "").trim());
         });
-        if (json.length > 0) processData(Object.keys(json[0]), json);
+        const rows: Record<string, string>[] = [];
+        ws.eachRow({ includeEmpty: false }, (row, rowNum) => {
+          if (rowNum === 1) return; // skip header row
+          const obj: Record<string, string> = {};
+          row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+            const header = headers[colNum - 1] ?? `col${colNum}`;
+            obj[header] = cell.text?.trim() ?? String(cell.value ?? "").trim();
+          });
+          if (Object.values(obj).some(v => v)) rows.push(obj);
+        });
+        if (rows.length > 0) processData(headers.filter(Boolean), rows);
       };
       reader.readAsArrayBuffer(f);
     }
@@ -227,7 +240,7 @@ export default function ImportParticipants() {
   const dupCount   = duplicates.length;
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title="Import Participants"
         subtitle="Upload CSV, Excel (.xlsx), or Google Sheets export"

@@ -95,7 +95,7 @@ export default function LogsPage() {
   });
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title="Audit Logs"
         subtitle="Complete history of all system actions"

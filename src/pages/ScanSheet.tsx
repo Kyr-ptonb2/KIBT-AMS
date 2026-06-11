@@ -230,7 +230,7 @@ export default function ScanSheet() {
   };
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full page-bg">
       <PageHeader
         title="Scan Attendance Sheet"
         subtitle="Upload a photograph of a completed KIBT attendance register"

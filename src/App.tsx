@@ -50,7 +50,13 @@ export default function App() {
     currentUser, setCurrentUser,
     setIsOnline, setConfig,
     setFinancialYears, selectedFY, setSelectedFY,
+    theme,
   } = useStore();
+
+  // Apply saved theme on startup
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   // Restore session on startup
   useEffect(() => {

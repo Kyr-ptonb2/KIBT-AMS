@@ -181,6 +181,32 @@ export interface CustomTableRow {
   addedBy?: string;
 }
 
+
+
+export interface TableScanResult {
+  scanId: string;
+  rowsInserted: number;
+  detectedColumns: string[];
+  matchedColumns: string[];
+  skippedColumns: string[];
+}
+
+export interface TableBatchItemResult {
+  itemId: string;
+  filename: string;
+  status: "done" | "failed";
+  rowsInserted: number;
+  matchedColumns: string[];
+  skippedColumns: string[];
+  error?: string;
+}
+
+export interface TableBatchScanResult {
+  batchId: string;
+  results: TableBatchItemResult[];
+  totalInserted: number;
+}
+
 export const SCAN_METHOD_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   gemini:    { label: "Online — Gemini",     color: "text-green-700", bg: "bg-green-100" },
   manual:    { label: "Manual Entry",        color: "text-gray-600",  bg: "bg-gray-100"  },
