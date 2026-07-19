@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Plus, Trash2, ScanLine, Calendar, MapPin, Users,
-  Globe, Monitor, ChevronDown, ChevronUp, Clock, PlusCircle
+  Globe, Monitor, ChevronDown, ChevronUp, Clock, PlusCircle,
+  BookOpen, UserCheck, X
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store";
@@ -260,6 +261,21 @@ function SessionsPanel({ eventId, eventStartDate, eventEndDate, eventRegion, can
   const [form, setForm] = useState({
     title: "", date: eventStartDate, startTime: "", endTime: "", region: eventRegion, venue: "",
   });
+  const [topics, setTopics] = useState<string[]>([]);
+  const [facilitators, setFacilitators] = useState<string[]>([]);
+  const [topicInput, setTopicInput] = useState("");
+  const [facilitatorInput, setFacilitatorInput] = useState("");
+
+  const addTopic = () => {
+    const v = topicInput.trim();
+    if (v && !topics.includes(v)) setTopics([...topics, v]);
+    setTopicInput("");
+  };
+  const addFacilitator = () => {
+    const v = facilitatorInput.trim();
+    if (v && !facilitators.includes(v)) setFacilitators([...facilitators, v]);
+    setFacilitatorInput("");
+  };
 
   const regionOptions = useMemo(() =>
     KIBT_REGIONS.map(r => <option key={r} value={r}>{r}</option>),
@@ -276,6 +292,10 @@ function SessionsPanel({ eventId, eventStartDate, eventEndDate, eventRegion, can
       qc.invalidateQueries({ queryKey: ["sessions", eventId] });
       qc.invalidateQueries({ queryKey: ["events"] });
       onHideForm();
+      setTopics([]);
+      setFacilitators([]);
+      setTopicInput("");
+      setFacilitatorInput("");
       addToast({ type: "success", message: "Session added." });
     },
     onError: (e: Error) => addToast({ type: "error", message: e.message }),
@@ -327,6 +347,54 @@ function SessionsPanel({ eventId, eventStartDate, eventEndDate, eventRegion, can
               <input className="input text-sm" placeholder="Hall, room, or online link"
                 value={form.venue} onChange={e => setForm({...form, venue: e.target.value})} />
             </div>
+
+            {/* Topics */}
+            <div className="col-span-3">
+              <label className="label flex items-center gap-1"><BookOpen size={11} /> Topics Covered</label>
+              <div className="flex gap-2">
+                <input className="input text-sm flex-1" placeholder="e.g. Financial Literacy — press Enter to add"
+                  value={topicInput}
+                  onChange={e => setTopicInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTopic(); } }} />
+                <button type="button" className="btn-secondary text-xs px-3" onClick={addTopic}>Add</button>
+              </div>
+              {topics.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {topics.map(t => (
+                    <span key={t} className="inline-flex items-center gap-1 bg-kibt-green/10 text-kibt-green text-xs px-2 py-1 rounded-full">
+                      {t}
+                      <button onClick={() => setTopics(topics.filter(x => x !== t))} className="hover:text-red-500">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Facilitators */}
+            <div className="col-span-3">
+              <label className="label flex items-center gap-1"><UserCheck size={11} /> Facilitators / Trainers</label>
+              <div className="flex gap-2">
+                <input className="input text-sm flex-1" placeholder="e.g. Jane Wanjiru — press Enter to add"
+                  value={facilitatorInput}
+                  onChange={e => setFacilitatorInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addFacilitator(); } }} />
+                <button type="button" className="btn-secondary text-xs px-3" onClick={addFacilitator}>Add</button>
+              </div>
+              {facilitators.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {facilitators.map(f => (
+                    <span key={f} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 text-xs px-2 py-1 rounded-full">
+                      {f}
+                      <button onClick={() => setFacilitators(facilitators.filter(x => x !== f))} className="hover:text-red-500">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button className="btn-secondary text-xs" onClick={onHideForm}>Cancel</button>
@@ -335,6 +403,8 @@ function SessionsPanel({ eventId, eventStartDate, eventEndDate, eventRegion, can
                 eventId, title: form.title || undefined, date: form.date,
                 startTime: form.startTime || undefined, endTime: form.endTime || undefined,
                 region: form.region || undefined, venue: form.venue || undefined,
+                topics: topics.length > 0 ? topics : undefined,
+                facilitators: facilitators.length > 0 ? facilitators : undefined,
               })}>
               {createMut.isPending ? "Adding…" : "Add Session"}
             </button>
@@ -350,29 +420,55 @@ function SessionsPanel({ eventId, eventStartDate, eventEndDate, eventRegion, can
       ) : (
         <div className="space-y-2">
           {sessions.map((s: any) => (
-            <div key={s.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-gray-100">
-              <div>
-                <span className="text-xs font-semibold text-gray-700">
-                  Session {s.sessionNo}{s.title ? ` — ${s.title}` : ""}
-                </span>
-                <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                  <span><Calendar size={10} className="inline mr-0.5" />{s.date}</span>
-                  {s.startTime && <span><Clock size={10} className="inline mr-0.5" />{s.startTime}{s.endTime ? ` – ${s.endTime}` : ""}</span>}
-                  {s.region && <span><MapPin size={10} className="inline mr-0.5" />{s.region}</span>}
-                  {s.venue && <span>· {s.venue}</span>}
-                  <span className="text-green-600"><Users size={10} className="inline mr-0.5" />{s.participantCount ?? 0}</span>
+            <div key={s.id} className="bg-white rounded-lg px-3 py-2.5 border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-gray-700">
+                    Session {s.sessionNo}{s.title ? ` — ${s.title}` : ""}
+                  </span>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5 flex-wrap">
+                    <span><Calendar size={10} className="inline mr-0.5" />{s.date}</span>
+                    {s.startTime && <span><Clock size={10} className="inline mr-0.5" />{s.startTime}{s.endTime ? ` – ${s.endTime}` : ""}</span>}
+                    {s.region && <span><MapPin size={10} className="inline mr-0.5" />{s.region}</span>}
+                    {s.venue && <span>· {s.venue}</span>}
+                    <span className="text-green-600"><Users size={10} className="inline mr-0.5" />{s.participantCount ?? 0}</span>
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <button className="text-xs text-kibt-green hover:underline px-2"
+                    onClick={() => onNavigateScan(s.id)}>Scan</button>
+                  {canDelete && (
+                    <button onClick={() => onDeleteSession(s)}
+                      className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded">
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="flex gap-1">
-                <button className="text-xs text-kibt-green hover:underline px-2"
-                  onClick={() => onNavigateScan(s.id)}>Scan</button>
-                {canDelete && (
-                  <button onClick={() => onDeleteSession(s)}
-                    className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded">
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </div>
+              {((s.topics && s.topics.length > 0) || (s.facilitators && s.facilitators.length > 0)) && (
+                <div className="mt-2 pt-2 border-t border-gray-50 space-y-1.5">
+                  {s.topics && s.topics.length > 0 && (
+                    <div className="flex items-start gap-1.5">
+                      <BookOpen size={11} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex flex-wrap gap-1">
+                        {s.topics.map((t: string) => (
+                          <span key={t} className="text-xs bg-kibt-green/10 text-kibt-green px-2 py-0.5 rounded-full">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {s.facilitators && s.facilitators.length > 0 && (
+                    <div className="flex items-start gap-1.5">
+                      <UserCheck size={11} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex flex-wrap gap-1">
+                        {s.facilitators.map((f: string) => (
+                          <span key={f} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{f}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

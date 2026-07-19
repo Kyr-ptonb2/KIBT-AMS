@@ -11,6 +11,7 @@ use tauri::State;
 
 const KEYRING_SERVICE: &str = "kibt-ams";
 const KEYRING_USER: &str = "gemini-api-key";
+const KEYRING_USER_GROQ: &str = "groq-api-key";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,9 @@ const KEYRING_USER: &str = "gemini-api-key";
 pub struct AppConfig {
     /// Gemini API key (loaded from OS keychain, NOT from database).
     pub gemini_api_key: Option<String>,
+    /// Optional free-tier Groq API key — used as an automatic fallback if
+    /// Gemini is unavailable (rate-limited, outage, invalid key).
+    pub groq_api_key: Option<String>,
     pub default_region: Option<String>,
     pub auto_update: bool,
     pub database_path: Option<String>,
@@ -41,10 +45,15 @@ pub fn get_config(state: State<'_, AppDataDir>) -> Result<AppConfig, String> {
         .and_then(|entry| entry.get_password())
         .ok();
 
+    let groq_api_key = Entry::new(KEYRING_SERVICE, KEYRING_USER_GROQ)
+        .and_then(|entry| entry.get_password())
+        .ok();
+
     let db_path_str = db_path(&state.0).to_string_lossy().to_string();
 
     Ok(AppConfig {
         gemini_api_key,
+        groq_api_key,
         default_region,
         auto_update,
         database_path: Some(db_path_str),
@@ -62,11 +71,19 @@ pub fn save_config(
     require_admin(&auth)?;
     let conn = open(&state.0).map_err(|e| e.to_string())?;
 
-    // Store API key in OS keychain
+    // Store API keys in OS keychain
     if let Some(ref key) = config.gemini_api_key {
         let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())?;
         if key.is_empty() {
             let _ = entry.delete_password(); // clear the key
+        } else {
+            entry.set_password(key).map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(ref key) = config.groq_api_key {
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER_GROQ).map_err(|e| e.to_string())?;
+        if key.is_empty() {
+            let _ = entry.delete_password();
         } else {
             entry.set_password(key).map_err(|e| e.to_string())?;
         }

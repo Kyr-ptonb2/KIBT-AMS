@@ -12,9 +12,10 @@ import {
 } from "../hooks/useTauri";
 import {
   ParticipantInput, BatchProgressEvent, QueueItem,
-  BUSINESS_TYPES, SCAN_METHOD_LABELS
+  SCAN_METHOD_LABELS
 } from "../types";
 import PageHeader from "../components/PageHeader";
+import { fileToOptimisedBytes } from "../lib/imageUtils";
 
 type ScanMode = "single" | "batch";
 
@@ -106,8 +107,11 @@ export default function ScanSheet() {
     if (!singleFile || !selectedEventId) return;
     setScanning(true);
     try {
-      const bytes = Array.from(new Uint8Array(await singleFile.arrayBuffer()));
-      const result = await scanSheet(selectedEventId, bytes, singleFile.name);
+      const { bytes, filename, originalSize, optimisedSize } = await fileToOptimisedBytes(singleFile);
+      if (originalSize > optimisedSize * 1.5) {
+        console.debug(`Image optimised: ${(originalSize/1024).toFixed(0)}KB → ${(optimisedSize/1024).toFixed(0)}KB`);
+      }
+      const result = await scanSheet(selectedEventId, bytes, filename);
       setReviewRows(result.rows.length > 0 ? result.rows : [emptyRow()]);
       setSingleMethod(result.method);
       setDetectedColumns(result.detectedColumns ?? []);
@@ -123,7 +127,7 @@ export default function ScanSheet() {
     if (!selectedEventId || reviewRows.length === 0) return;
     setSaving(true);
     try {
-      const count = await saveParticipants(selectedEventId, reviewRows.filter((r) => r.name.trim()));
+      const count = await saveParticipants(selectedEventId, reviewRows.filter((r) => r.name.trim()), selectedSessionId || undefined);
       qc.invalidateQueries({ queryKey: ["participants"] });
       qc.invalidateQueries({ queryKey: ["events"] });
       qc.invalidateQueries({ queryKey: ["report"] });
@@ -159,14 +163,17 @@ export default function ScanSheet() {
     setBatchRunning(true);
     setBatchRows([]);
 
-    // Load all file bytes
+    // Optimise + load all file bytes (resized/compressed before IPC transfer)
     const items = await Promise.all(
-      queue.map(async (item: any) => ({
-        itemId: item.itemId,
-        eventId: item.eventId || selectedEventId,
-        imageBytes: Array.from(new Uint8Array(await item._file.arrayBuffer())),
-        filename: item.filename,
-      }))
+      queue.map(async (item: any) => {
+        const { bytes, filename } = await fileToOptimisedBytes(item._file);
+        return {
+          itemId: item.itemId,
+          eventId: item.eventId || selectedEventId,
+          imageBytes: bytes,
+          filename,
+        };
+      })
     );
 
     try {
@@ -196,7 +203,7 @@ export default function ScanSheet() {
     try {
       let total = 0;
       for (const group of batchRows) {
-        const count = await saveParticipants(selectedEventId, group.rows.filter((r) => r.name.trim()));
+        const count = await saveParticipants(selectedEventId, group.rows.filter((r) => r.name.trim()), selectedSessionId || undefined);
         total += count;
       }
       qc.invalidateQueries({ queryKey: ["participants"] });
@@ -595,11 +602,9 @@ function ReviewTable({
                   onChange={(e) => onUpdate(i, "name", e.target.value)} placeholder="Full name" />
               </td>
               <td className="py-1.5 pr-2">
-                <select className="table-cell-edit" value={row.businessType ?? ""}
-                  onChange={(e) => onUpdate(i, "businessType", e.target.value)}>
-                  <option value="">—</option>
-                  {BUSINESS_TYPES.map((bt) => <option key={bt} value={bt}>{bt}</option>)}
-                </select>
+                <input className="table-cell-edit" placeholder="Business type"
+                  value={row.businessType ?? ""}
+                  onChange={(e) => onUpdate(i, "businessType", e.target.value)} />
               </td>
               <td className="py-1.5 pr-2">
                 <select className="table-cell-edit" value={row.ageCategory ?? ""}

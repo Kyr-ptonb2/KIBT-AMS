@@ -1,6 +1,6 @@
 {
   "name": "kibt-ams",
-  "version": "2.0.0",
+  "version": "2.6.0",
   "description": "KIBT Attendance Management System \u2014 Kenya Institute of Business Training",
   "private": true,
   "type": "module",
@@ -18,12 +18,13 @@
     "@tauri-apps/plugin-dialog": "^2.0.1",
     "@tauri-apps/plugin-fs": "^2.1.0",
     "@tauri-apps/plugin-updater": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
     "exceljs": "^4.4.0",
     "lucide-react": "^0.303.0",
     "papaparse": "^5.5.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.31.0",
+    "react-router-dom": "^6.30.4",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
@@ -39,7 +40,7 @@
     "vite": "^5.0.11"
   },
   "overrides": {
-    "react-router": "^6.31.0",
-    "react-router-dom": "^6.31.0"
+    "react-router": "^6.30.4",
+    "react-router-dom": "^6.30.4"
   }
 }

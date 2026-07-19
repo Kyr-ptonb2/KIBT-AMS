@@ -212,15 +212,26 @@ export default function Export() {
           </div>
         </div>
 
-        {/* ── Columns info ────────────────────────────────────────────────── */}
+        {/* ── Format info ─────────────────────────────────────────────────── */}
         <div className="card p-5">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">Exported Columns</h3>
-          <div className="flex flex-wrap gap-2">
-            {["Event Title","Event Date","Region","Venue","Financial Year",
-              "Full Name","Business Type","Age Category","Gender","Phone Number",
-              "National ID","Location","Consent","Recorded At"].map(col => (
-              <span key={col} className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">{col}</span>
-            ))}
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">Export Format</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Exports are grouped by event rather than one long flat table — each event gets its
+            own section, so nothing is repeated needlessly and no column shows up empty.
+          </p>
+          <div className="space-y-2 text-xs text-gray-600">
+            <div className="flex items-start gap-2">
+              <span className="px-2 py-0.5 bg-kibt-green/10 text-kibt-green rounded-full font-medium flex-shrink-0">Section header</span>
+              <span>Event title · Financial Year · Region (or "Online"/"Hybrid") · Dates · Venue</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="px-2 py-0.5 bg-kibt-green/10 text-kibt-green rounded-full font-medium flex-shrink-0">Below header</span>
+              <span>Topics Covered and Trainers/Facilitators — shown only if that event has any recorded</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="px-2 py-0.5 bg-kibt-green/10 text-kibt-green rounded-full font-medium flex-shrink-0">Participant table</span>
+              <span>Full Name and Recorded At always shown — every other column (Business Type, Gender, Phone, National ID, Location, Consent, Extra Fields) only appears if at least one participant in that event actually has data in it</span>
+            </div>
           </div>
         </div>
       </div>

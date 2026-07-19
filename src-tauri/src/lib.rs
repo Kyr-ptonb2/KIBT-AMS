@@ -1,4 +1,5 @@
 mod auth;
+mod sync;
 mod custom_tables;
 mod config;
 mod logs;
@@ -19,6 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to resolve app data directory");
@@ -60,6 +62,7 @@ pub fn run() {
             events::get_financial_years,
             events::get_event_sessions,
             events::create_session,
+            events::update_session,
             events::delete_session,
             // Participants
             participants::get_participants,
@@ -101,6 +104,10 @@ pub fn run() {
             custom_tables::export_custom_table_excel,
             custom_tables::scan_into_custom_table,
             custom_tables::scan_batch_into_custom_table,
+            // Offline sync (USB / file transfer)
+            sync::export_sync_package,
+            sync::peek_sync_package,
+            sync::import_sync_package,
         ])
         .run(tauri::generate_context!())
         .expect("error while running KIBT-AMS");

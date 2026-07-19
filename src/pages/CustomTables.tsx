@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
-  Plus, Table2, Trash2, Pencil, Download, ChevronRight,
+  Plus, Table2, Trash2, Pencil, ChevronRight,
   ArrowLeft, X, Save, Loader, List, FileSpreadsheet,
   FileText, Link, Unlink, Search, CheckCircle, ScanLine, Camera, AlertCircle, Image
 } from "lucide-react";
@@ -19,8 +19,9 @@ import {
   getEvents,
 } from "../hooks/useTauri";
 import { listen } from "@tauri-apps/api/event";
+import { fileToOptimisedBytes } from "../lib/imageUtils";
 
-import { ColumnDef, CustomTableDef, CustomTableRow, TableScanResult, TableBatchItemResult } from "../types";
+import { ColumnDef, CustomTableDef, CustomTableRow, TableScanResult } from "../types";
 import { useStore } from "../store";
 import PageHeader from "../components/PageHeader";
 
@@ -852,8 +853,8 @@ function ScanPanel({ def, onClose, onDone }: ScanPanelProps) {
     if (!singleFile) return;
     setScanning(true);
     try {
-      const bytes = Array.from(new Uint8Array(await singleFile.arrayBuffer()));
-      const r = await scanIntoCustomTable({ tableId: def.id, imageBytes: bytes, filename: singleFile.name });
+      const { bytes, filename } = await fileToOptimisedBytes(singleFile);
+      const r = await scanIntoCustomTable({ tableId: def.id, imageBytes: bytes, filename });
       setResult(r);
     } catch (e: any) { addToast({ type: "error", message: String(e) }); }
     finally { setScanning(false); }
@@ -872,11 +873,10 @@ function ScanPanel({ def, onClose, onDone }: ScanPanelProps) {
     if (!queue.length) return;
     setBatchRunning(true);
     try {
-      const items = await Promise.all(queue.map(async (item) => ({
-        itemId: item.itemId,
-        imageBytes: Array.from(new Uint8Array(await item.file.arrayBuffer())),
-        filename: item.file.name,
-      })));
+      const items = await Promise.all(queue.map(async (item) => {
+        const { bytes, filename } = await fileToOptimisedBytes(item.file);
+        return { itemId: item.itemId, imageBytes: bytes, filename };
+      }));
       const r = await scanBatchIntoCustomTable({ tableId: def.id, items });
       setTotalInserted(r.totalInserted);
       setBatchDone(true);

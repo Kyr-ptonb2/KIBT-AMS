@@ -14,6 +14,10 @@ import {
   Participant,
   ParticipantFilter,
   DuplicateCheckResult,
+  EventSession,
+  ExportSyncResult,
+  ImportSyncResult,
+  SyncPackageInfo,
   ParticipantInput,
   QueueItemInput,
   ReportData,
@@ -46,8 +50,8 @@ export const getFinancialYears = () =>
 export const getParticipants = (filter: ParticipantFilter) =>
   invoke<Participant[]>("get_participants", { filter });
 
-export const saveParticipants = (eventId: string, rows: ParticipantInput[]) =>
-  invoke<number>("save_participants", { eventId, rows });
+export const saveParticipants = (eventId: string, rows: ParticipantInput[], sessionId?: string) =>
+  invoke<number>("save_participants", { eventId, sessionId, rows });
 
 export const updateParticipant = (participantId: string, input: ParticipantInput) =>
   invoke<boolean>("update_participant", { participantId, input });
@@ -121,6 +125,16 @@ export const scanBatchIntoCustomTable = (input: {
   items: { itemId: string; imageBytes: number[]; filename: string }[];
 }) => invoke<TableBatchScanResult>("scan_batch_into_custom_table", { input });
 
+// ── Sync ─────────────────────────────────────────────────────────────────────
+export const exportSyncPackage = (path: string, sinceDate: string | null, label: string) =>
+  invoke<ExportSyncResult>("export_sync_package", { path, sinceDate, label });
+
+export const peekSyncPackage = (path: string) =>
+  invoke<SyncPackageInfo>("peek_sync_package", { path });
+
+export const importSyncPackage = (path: string) =>
+  invoke<ImportSyncResult>("import_sync_package", { path });
+
 export const checkConnectivity = () => invoke<boolean>("check_connectivity");
 
 export const checkDuplicates = (rows: ParticipantInput[]) =>
@@ -183,12 +197,19 @@ export const resetUserPassword = (userId: string, newPassword: string) =>
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 export const getEventSessions = (eventId: string) =>
-  invoke<any[]>("get_event_sessions", { eventId });
+  invoke<EventSession[]>("get_event_sessions", { eventId });
 
 export const createSession = (input: {
   eventId: string; title?: string; date: string;
   startTime?: string; endTime?: string; region?: string; venue?: string;
-}) => invoke<any>("create_session", { input });
+  topics?: string[]; facilitators?: string[];
+}) => invoke<EventSession>("create_session", { input });
+
+export const updateSession = (params: {
+  sessionId: string; title?: string; date: string;
+  startTime?: string; endTime?: string; region?: string; venue?: string;
+  topics?: string[]; facilitators?: string[];
+}) => invoke<boolean>("update_session", params);
 
 export const deleteSession = (sessionId: string) =>
   invoke<boolean>("delete_session", { sessionId });

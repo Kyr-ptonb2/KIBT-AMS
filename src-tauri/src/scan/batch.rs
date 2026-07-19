@@ -1,6 +1,6 @@
-// scan/batch.rs — Batch queue manager, Gemini only.
+// scan/batch.rs — Batch queue manager with automatic provider fallback.
 
-use super::{gemini, save_scan_record, BatchItemResult, BatchScanResult, QueueItemInput, friendly_api_error, get_gemini_key};
+use super::{save_scan_record, scan_with_fallback, BatchItemResult, BatchScanResult, QueueItemInput};
 use crate::db::AppDataDir;
 use anyhow::Result;
 use serde::Serialize;
@@ -30,27 +30,27 @@ pub async fn run_batch(
     let total = items.len();
     let app_data_dir = state.0.clone();
 
-    let gemini_key = match get_gemini_key() {
-        Ok(key) => key,
-        Err(_) => return Err("Gemini API key not configured. Set it in Settings.".to_string()),
-    };
-
     let items_map: std::collections::HashMap<String, usize> = items
         .iter().enumerate()
         .map(|(i, item)| (item.item_id.clone(), i))
         .collect();
 
-    // 4 concurrent workers with 1s rate-limiting between Gemini calls
-    let semaphore    = Arc::new(tokio::sync::Semaphore::new(4));
+    // 4 concurrent workers with 1s rate-limiting between calls (per-worker,
+    // shared across whichever provider ends up serving each request).
+    // 2 concurrent workers — deliberately conservative. KIBT-AMS runs on
+    // older field laptops; each worker holds a full image in memory and
+    // spawns a curl subprocess. Combined with client-side image compression
+    // (src/lib/imageUtils.ts), 2 workers keeps peak RAM/CPU low while still
+    // getting meaningful parallelism over slow/variable rural connections.
+    let semaphore    = Arc::new(tokio::sync::Semaphore::new(2));
     let rate_limiter = Arc::new(tokio::sync::Mutex::new(std::time::Instant::now()));
     let mut handles  = Vec::new();
 
     for (index, item) in items.into_iter().enumerate() {
-        let batch_id_clone    = batch_id.clone();
-        let app_handle_clone  = app_handle.clone();
+        let batch_id_clone     = batch_id.clone();
+        let app_handle_clone   = app_handle.clone();
         let app_data_dir_clone = app_data_dir.clone();
-        let gemini_key_clone  = gemini_key.clone();
-        let semaphore_clone   = semaphore.clone();
+        let semaphore_clone    = semaphore.clone();
         let rate_limiter_clone = rate_limiter.clone();
 
         let handle = tokio::spawn(async move {
@@ -71,29 +71,29 @@ pub async fn run_batch(
                 method: None, extracted_count: None, error: None,
             });
 
-            match gemini::scan_with_gemini(&item.image_bytes, &gemini_key_clone).await {
-                Ok(r) => {
+            match scan_with_fallback(&item.image_bytes).await {
+                Ok((r, method_used, fallback_note)) => {
                     let extracted = r.rows.len();
                     let cols_json = serde_json::to_string(&r.detected_columns).ok();
 
                     match save_scan_record(
                         &app_data_dir_clone, &item.event_id,
                         Some(&batch_id_clone), Some((index + 1) as i32),
-                        &item.image_bytes, &item.filename, "gemini",
-                        extracted, &None, cols_json.as_deref(),
+                        &item.image_bytes, &item.filename, &method_used,
+                        extracted, &fallback_note, cols_json.as_deref(),
                     ) {
                         Ok(scan_id) => {
                             let _ = app_handle_clone.emit("scan_batch_progress", BatchProgressEvent {
                                 batch_id: batch_id_clone.clone(), item_id: item.item_id.clone(),
                                 index, total, status: "done".to_string(),
-                                method: Some("gemini".to_string()),
+                                method: Some(method_used.clone()),
                                 extracted_count: Some(extracted), error: None,
                             });
                             Some(BatchItemResult {
                                 item_id: item.item_id, scan_id,
                                 event_id: item.event_id, filename: item.filename,
-                                status: "done".to_string(), method: "gemini".to_string(),
-                                rows: r.rows, error: None,
+                                status: "done".to_string(), method: method_used,
+                                rows: r.rows, error: fallback_note,
                                 detected_columns: r.detected_columns,
                             })
                         }
@@ -113,8 +113,7 @@ pub async fn run_batch(
                         }
                     }
                 }
-                Err(e) => {
-                    let msg = friendly_api_error(&e.to_string());
+                Err(msg) => {
                     let _ = app_handle_clone.emit("scan_batch_progress", BatchProgressEvent {
                         batch_id: batch_id_clone.clone(), item_id: item.item_id.clone(),
                         index, total, status: "failed".to_string(),

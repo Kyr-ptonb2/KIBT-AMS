@@ -26,6 +26,8 @@ export interface EventSession {
   region?: string;
   venue?: string;
   participantCount?: number;
+  topics: string[];
+  facilitators: string[];
 }
 
 export interface Participant {
@@ -93,7 +95,7 @@ export interface EventSummary {
 }
 
 export interface AppConfig {
-  geminiApiKey?: string; defaultRegion?: string;
+  geminiApiKey?: string; groqApiKey?: string; defaultRegion?: string;
   scanMethodPreference: "online";
   autoUpdate: boolean; databasePath?: string;
 }
@@ -120,10 +122,7 @@ export const KIBT_REGIONS = [
   "Kisumu", "Homa Bay", "Migori", "Kisii", "Nyamira", "Nairobi",
 ] as const;
 
-export const BUSINESS_TYPES = [
-  "Sole proprietor", "Partnership", "Limited company",
-  "Cooperative", "Association", "Other",
-] as const;
+// BUSINESS_TYPES removed — business type is now a free-text field
 
 export const EVENT_TYPES = [
   { value: "in-person", label: "In-Person",  color: "bg-green-100 text-green-700" },
@@ -207,8 +206,52 @@ export interface TableBatchScanResult {
   totalInserted: number;
 }
 
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
+
+export interface ExportSyncResult {
+  path: string;
+  exportedAt: string;
+  events: number;
+  eventSessions: number;
+  participants: number;
+  scans: number;
+  customTableDefs: number;
+  customTableRows: number;
+  fileSizeKb: number;
+}
+
+export interface ImportSyncResult {
+  sourceLabel: string;
+  exportedAt: string;
+  eventsInserted: number;
+  eventSessionsInserted: number;
+  participantsInserted: number;
+  scansInserted: number;
+  customTableDefsInserted: number;
+  customTableRowsInserted: number;
+  eventsSkipped: number;
+  participantsSkipped: number;
+  errors: string[];
+}
+
+export interface SyncPackageInfo {
+  version: number;
+  exportedAt: string;
+  exportedBy: string;
+  sourceLabel: string;
+  since?: string;
+  eventCount: number;
+  participantCount: number;
+  customTableCount: number;
+  customRowCount: number;
+  fileSizeKb: number;
+}
+
 export const SCAN_METHOD_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  gemini:    { label: "Online — Gemini",     color: "text-green-700", bg: "bg-green-100" },
-  manual:    { label: "Manual Entry",        color: "text-gray-600",  bg: "bg-gray-100"  },
-  failed:    { label: "Failed",              color: "text-red-700",   bg: "bg-red-100"   },
+  gemini:     { label: "Online — Gemini",       color: "text-green-700", bg: "bg-green-100" },
+  groq:       { label: "Backup — Groq",         color: "text-amber-700", bg: "bg-amber-100" },
+  "gemini-alt": { label: "Gemini (alt model)",  color: "text-blue-700",  bg: "bg-blue-100"  },
+  manual:     { label: "Manual Entry",          color: "text-gray-600",  bg: "bg-gray-100"  },
+  failed:     { label: "Failed",                color: "text-red-700",   bg: "bg-red-100"   },
 };

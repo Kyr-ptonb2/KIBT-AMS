@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { check as checkForUpdate, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Key, MapPin, Database, HardDrive, RotateCcw,
-  Save, Eye, EyeOff, CheckCircle, ExternalLink, Sun, Moon
+  Save, Eye, EyeOff, CheckCircle, ExternalLink, Sun, Moon, ShieldCheck,
+  Download, RefreshCw, PartyPopper
 } from "lucide-react";
 import { useStore } from "../store";
 import { Palette } from "lucide-react";
@@ -14,7 +18,71 @@ export default function Settings() {
   const { setConfig, addToast, theme, setTheme } = useStore();
   const [config, setLocalConfig] = useState<AppConfig | null>(null);
   const [showKey, setShowKey] = useState(false);
+  const [showGroqKey, setShowGroqKey] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // ── Software update state ──────────────────────────────────────────────
+  const [updateState, setUpdateState] = useState<
+    "idle" | "checking" | "upToDate" | "available" | "downloading" | "readyToRestart" | "error"
+  >("idle");
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<string>("…");
+
+  useEffect(() => {
+    getVersion().then(setCurrentVersion).catch(() => {});
+  }, []);
+
+  const handleCheckForUpdate = async () => {
+    setUpdateState("checking");
+    setUpdateError(null);
+    try {
+      const update = await checkForUpdate();
+      if (update?.available) {
+        setPendingUpdate(update);
+        setUpdateState("available");
+      } else {
+        setUpdateState("upToDate");
+      }
+    } catch (e: any) {
+      setUpdateError(String(e));
+      setUpdateState("error");
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!pendingUpdate) return;
+    setUpdateState("downloading");
+    setDownloadProgress(0);
+    try {
+      let downloaded = 0;
+      let total = 0;
+      await pendingUpdate.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            total = event.data.contentLength ?? 0;
+            break;
+          case "Progress":
+            downloaded += event.data.chunkLength;
+            if (total > 0) setDownloadProgress(Math.round((downloaded / total) * 100));
+            break;
+          case "Finished":
+            setDownloadProgress(100);
+            break;
+        }
+      });
+      setUpdateState("readyToRestart");
+    } catch (e: any) {
+      setUpdateError(String(e));
+      setUpdateState("error");
+    }
+  };
+
+  const handleRestartNow = async () => {
+    await relaunch();
+  };
+
 
   useEffect(() => {
     getConfig().then((c) => { setLocalConfig(c); setConfig(c); });
@@ -164,6 +232,59 @@ export default function Settings() {
           </a>
         </div>
 
+        {/* ── Groq API key (backup provider) ─────────────────────────── */}
+        <div className="card p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={16} className="text-amber-500" />
+            <h3 className="text-sm font-semibold text-gray-800">Backup AI Provider (Groq)</h3>
+            {config.groqApiKey && (
+              <span className="flex items-center gap-1 text-xs text-green-600 font-medium ml-auto">
+                <CheckCircle size={12} /> Key configured
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500">
+            Optional. If Gemini is unavailable during a scan (rate limit, outage, or invalid key),
+            KIBT-AMS automatically switches to Groq's free Llama Vision model so scanning never stops
+            completely. Strongly recommended for field use.
+          </p>
+          <div className="relative">
+            <input
+              className="input pr-10"
+              type={showGroqKey ? "text" : "password"}
+              placeholder="Paste your free Groq API key here (optional)"
+              value={config.groqApiKey ?? ""}
+              onChange={(e) => setLocalConfig({ ...config, groqApiKey: e.target.value })}
+            />
+            <button
+              onClick={() => setShowGroqKey((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {showGroqKey ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+          <div className="text-xs text-gray-500 bg-amber-50 rounded-lg px-4 py-3 space-y-1">
+            <p className="font-medium text-amber-700">How to get a free Groq API key:</p>
+            <ol className="list-decimal list-inside space-y-0.5 text-amber-700">
+              <li>Open <strong>console.groq.com</strong> in a browser</li>
+              <li>Sign in with any Google or GitHub account</li>
+              <li>Click "API Keys" → "Create API Key"</li>
+              <li>Copy and paste the key above</li>
+            </ol>
+            <p className="text-amber-600 mt-1">
+              Completely free · No credit card required · Fast inference · Key stored securely in OS keychain
+            </p>
+          </div>
+          <a
+            href="https://console.groq.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-kibt-green hover:underline"
+          >
+            <ExternalLink size={12} /> Open Groq Console
+          </a>
+        </div>
+
         {/* ── Preferences ──────────────────────────────────────────── */}
         <div className="card p-5 space-y-4">
           <div className="flex items-center gap-2">
@@ -195,6 +316,80 @@ export default function Settings() {
               Check for updates automatically on startup
             </label>
           </div>
+        </div>
+
+        {/* ── Software Updates ──────────────────────────────────────── */}
+        <div className="card p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={16} className="text-kibt-green" />
+              <h3 className="text-sm font-semibold text-gray-800">Software Updates</h3>
+            </div>
+            <span className="text-xs text-gray-400">Version {currentVersion}</span>
+          </div>
+
+          {updateState === "idle" && (
+            <button className="btn-secondary w-full justify-center" onClick={handleCheckForUpdate}>
+              <RefreshCw size={14} /> Check for Updates
+            </button>
+          )}
+
+          {updateState === "checking" && (
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-2">
+              <RefreshCw size={14} className="animate-spin" /> Checking for updates…
+            </div>
+          )}
+
+          {updateState === "upToDate" && (
+            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2.5">
+              <CheckCircle size={14} /> You're on the latest version.
+            </div>
+          )}
+
+          {updateState === "available" && pendingUpdate && (
+            <div className="space-y-3">
+              <div className="text-sm text-gray-700 bg-blue-50 rounded-lg px-3 py-2.5">
+                <p className="font-medium">Version {pendingUpdate.version} is available</p>
+                {pendingUpdate.body && (
+                  <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">{pendingUpdate.body}</p>
+                )}
+              </div>
+              <button className="btn-primary w-full justify-center" onClick={handleInstallUpdate}>
+                <Download size={14} /> Download &amp; Install
+              </button>
+            </div>
+          )}
+
+          {updateState === "downloading" && (
+            <div className="space-y-2">
+              <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                <div className="bg-kibt-green h-full transition-all" style={{ width: `${downloadProgress}%` }} />
+              </div>
+              <p className="text-xs text-gray-500 text-center">Downloading update… {downloadProgress}%</p>
+            </div>
+          )}
+
+          {updateState === "readyToRestart" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2.5">
+                <PartyPopper size={14} /> Update installed — restart to finish.
+              </div>
+              <button className="btn-primary w-full justify-center" onClick={handleRestartNow}>
+                <RefreshCw size={14} /> Restart Now
+              </button>
+            </div>
+          )}
+
+          {updateState === "error" && (
+            <div className="space-y-2">
+              <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2.5 break-all">
+                Update check failed: {updateError}
+              </div>
+              <button className="btn-secondary w-full justify-center" onClick={handleCheckForUpdate}>
+                <RefreshCw size={14} /> Try Again
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Database ──────────────────────────────────────────────── */}

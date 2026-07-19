@@ -2,6 +2,8 @@
 
 pub mod batch;
 pub mod gemini;
+pub mod groq;
+pub mod http;
 
 use crate::db::{open, AppDataDir};
 use crate::logs::write_log;
@@ -81,7 +83,9 @@ pub async fn check_connectivity() -> bool {
     .unwrap_or(false)
 }
 
-/// Scan a single sheet image using Gemini (online only).
+/// Scan a single sheet image with automatic provider fallback.
+/// Tries Gemini first; if it fails (rate-limited, down, invalid key),
+/// automatically retries with Groq (free tier) if a Groq key is configured.
 #[tauri::command]
 pub async fn scan_sheet(
     state: State<'_, AppDataDir>,
@@ -90,35 +94,87 @@ pub async fn scan_sheet(
     filename: String,
 ) -> Result<ScanResult, String> {
     let app_data_dir = state.0.clone();
-    let gemini_key = get_gemini_key().map_err(|_| {
-        "Gemini API key not configured. Please add it in Settings.".to_string()
-    })?;
 
-    match gemini::scan_with_gemini(&image_bytes, &gemini_key).await {
-        Ok(r) => {
-            let extracted = r.rows.len();
-            let cols_json = serde_json::to_string(&r.detected_columns).ok();
-            let scan_id = save_scan_record(
-                &app_data_dir, &event_id, None, None,
-                &image_bytes, &filename, "gemini",
-                extracted, &None, cols_json.as_deref(),
-            ).map_err(|e| e.to_string())?;
+    // scan_with_fallback already returns a well-formatted, user-facing error
+    // message (naming which providers were tried and why) — don't re-wrap it.
+    let (result, method_used, fallback_note) = scan_with_fallback(&image_bytes).await?;
 
-            write_log(&app_data_dir, None, None,
-                "scan.gemini", "scan",
-                Some(&scan_id), Some(&event_id),
-                Some(&format!("{} rows extracted from {}", extracted, filename)));
+    let extracted = result.rows.len();
+    let cols_json = serde_json::to_string(&result.detected_columns).ok();
+    let scan_id = save_scan_record(
+        &app_data_dir, &event_id, None, None,
+        &image_bytes, &filename, &method_used,
+        extracted, &fallback_note, cols_json.as_deref(),
+    ).map_err(|e| e.to_string())?;
 
-            Ok(ScanResult {
-                scan_id,
-                method: "gemini".to_string(),
-                rows: r.rows,
-                extracted_count: extracted,
-                accuracy_note: None,
-                detected_columns: r.detected_columns,
-            })
+    write_log(&app_data_dir, None, None,
+        &format!("scan.{}", method_used), "scan",
+        Some(&scan_id), Some(&event_id),
+        Some(&format!("{} rows extracted from {}{}", extracted, filename,
+            fallback_note.as_deref().map(|n| format!(" ({})", n)).unwrap_or_default())));
+
+    Ok(ScanResult {
+        scan_id,
+        method: method_used,
+        rows: result.rows,
+        extracted_count: extracted,
+        accuracy_note: fallback_note,
+        detected_columns: result.detected_columns,
+    })
+}
+
+/// Try each configured AI provider in order until one succeeds.
+/// Order: Gemini (primary) → Groq (free fallback) → Gemini alternate model.
+/// Returns (result, provider_name_used, optional_note_about_fallback).
+pub async fn scan_with_fallback(
+    image_bytes: &[u8],
+) -> std::result::Result<(gemini::GeminiScanResult, String, Option<String>), String> {
+    let mut errors: Vec<String> = Vec::new();
+
+    // ── 1. Primary: Gemini ──────────────────────────────────────────────────
+    if let Ok(gemini_key) = get_gemini_key() {
+        match gemini::scan_with_gemini(image_bytes, &gemini_key).await {
+            Ok(r) => return Ok((r, "gemini".to_string(), None)),
+            Err(e) => errors.push(format!("Gemini: {}", friendly_api_error(&e.to_string()))),
         }
-        Err(e) => Err(friendly_api_error(&e.to_string())),
+    } else {
+        errors.push("Gemini: no API key configured".to_string());
+    }
+
+    // ── 2. Fallback: Groq (free tier, Llama Vision) ─────────────────────────
+    if let Ok(groq_key) = get_groq_key() {
+        match groq::scan_with_groq(image_bytes, &groq_key).await {
+            Ok(r) => {
+                return Ok((
+                    r, "groq".to_string(),
+                    Some("Auto-switched to backup AI (Gemini unavailable)".to_string()),
+                ));
+            }
+            Err(e) => errors.push(format!("Groq: {}", friendly_api_error(&e.to_string()))),
+        }
+    }
+
+    // ── 3. Last resort: Gemini alternate model (in case only one model is down) ──
+    if let Ok(gemini_key) = get_gemini_key() {
+        match gemini::scan_with_gemini_alt_model(image_bytes, &gemini_key).await {
+            Ok(r) => {
+                return Ok((
+                    r, "gemini-alt".to_string(),
+                    Some("Used alternate Gemini model (primary model unavailable)".to_string()),
+                ));
+            }
+            Err(e) => errors.push(format!("Gemini (alt model): {}", friendly_api_error(&e.to_string()))),
+        }
+    }
+
+    // All providers failed
+    if errors.is_empty() {
+        Err("No AI provider is configured. Add a Gemini or Groq API key in Settings.".to_string())
+    } else {
+        Err(format!(
+            "All AI providers failed:\n{}\n\nAdd a free Groq API key in Settings as a backup — see Settings for instructions.",
+            errors.join("\n")
+        ))
     }
 }
 
@@ -149,6 +205,13 @@ pub fn get_gemini_key() -> Result<String> {
     let entry = keyring::Entry::new("kibt-ams", "gemini-api-key")?;
     let key = entry.get_password()?;
     if key.is_empty() { anyhow::bail!("Gemini API key not configured"); }
+    Ok(key)
+}
+
+pub fn get_groq_key() -> Result<String> {
+    let entry = keyring::Entry::new("kibt-ams", "groq-api-key")?;
+    let key = entry.get_password()?;
+    if key.is_empty() { anyhow::bail!("Groq API key not configured"); }
     Ok(key)
 }
 

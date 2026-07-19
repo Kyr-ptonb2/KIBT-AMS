@@ -21,6 +21,7 @@ const UserManagement   = lazy(() => import("./pages/UserManagement"));
 const LogsPage         = lazy(() => import("./pages/LogsPage"));
 const ImportParticipants = lazy(() => import("./pages/ImportParticipants"));
 const CustomTables     = lazy(() => import("./pages/CustomTables"));
+const SyncPage         = lazy(() => import("./pages/SyncPage"));
 
 // Lightweight spinner shown while a lazy page loads
 function PageSkeleton() {
@@ -50,7 +51,7 @@ export default function App() {
     currentUser, setCurrentUser,
     setIsOnline, setConfig,
     setFinancialYears, selectedFY, setSelectedFY,
-    theme,
+    theme, addToast,
   } = useStore();
 
   // Apply saved theme on startup
@@ -77,6 +78,22 @@ export default function App() {
         if (years.length > 0) {
           setFinancialYears(years);
           if (!years.includes(selectedFY)) setSelectedFY(years[0]);
+        }
+
+        // Silent background update check — never auto-installs. Only notifies
+        // via a toast so the person can go install it from Settings when
+        // convenient (e.g. not mid-scan). Respects the Settings toggle.
+        if (config.autoUpdate && online) {
+          import("@tauri-apps/plugin-updater").then(({ check }) =>
+            check().then((update) => {
+              if (update?.available) {
+                addToast({
+                  type: "info",
+                  message: `Version ${update.version} is available — open Settings to install.`,
+                });
+              }
+            }).catch(() => {}) // silent — never interrupt startup over a failed check
+          );
         }
       } catch {}
     };
@@ -120,6 +137,7 @@ export default function App() {
             <Route path="reports"      element={<Suspense fallback={<PageSkeleton />}><Reports /></Suspense>} />
             <Route path="import"       element={<Suspense fallback={<PageSkeleton />}><ImportParticipants /></Suspense>} />
             <Route path="custom-tables" element={<Suspense fallback={<PageSkeleton />}><CustomTables /></Suspense>} />
+            <Route path="sync"          element={<AdminOnly><Suspense fallback={<PageSkeleton />}><SyncPage /></Suspense></AdminOnly>} />
             <Route path="export"       element={<AdminOnly><Suspense fallback={<PageSkeleton />}><Export /></Suspense></AdminOnly>} />
             <Route path="settings"     element={<AdminOnly><Suspense fallback={<PageSkeleton />}><Settings /></Suspense></AdminOnly>} />
             <Route path="users"        element={<AdminOnly><Suspense fallback={<PageSkeleton />}><UserManagement /></Suspense></AdminOnly>} />

@@ -42,6 +42,9 @@ pub struct EventSession {
     pub region: Option<String>,
     pub venue: Option<String>,
     pub participant_count: Option<i64>,
+    // Topics and facilitators (stored as JSON arrays)
+    pub topics: Vec<String>,
+    pub facilitators: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +69,8 @@ pub struct CreateSessionInput {
     pub end_time: Option<String>,
     pub region: Option<String>,
     pub venue: Option<String>,
+    pub topics: Option<Vec<String>>,
+    pub facilitators: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -251,7 +256,8 @@ pub fn get_event_sessions(
     let mut stmt = conn.prepare(r#"
         SELECT s.id, s.event_id, s.session_no, s.title, s.date,
                s.start_time, s.end_time, s.region, s.venue,
-               COUNT(p.id) AS participant_count
+               COUNT(p.id) AS participant_count,
+               COALESCE(s.topics_json, '[]'), COALESCE(s.facilitators_json, '[]')
         FROM event_sessions s
         LEFT JOIN participants p ON p.session_id = s.id
         WHERE s.event_id = ?1
@@ -259,12 +265,19 @@ pub fn get_event_sessions(
         ORDER BY s.date, s.start_time
     "#).map_err(|e| e.to_string())?;
 
-    let sessions = stmt.query_map(params![event_id], |r| Ok(EventSession {
-        id: r.get(0)?, event_id: r.get(1)?, session_no: r.get(2)?,
-        title: r.get(3)?, date: r.get(4)?, start_time: r.get(5)?,
-        end_time: r.get(6)?, region: r.get(7)?, venue: r.get(8)?,
-        participant_count: r.get(9)?,
-    })).map_err(|e| e.to_string())?
+    let sessions = stmt.query_map(params![event_id], |r| {
+        let topics_json: String     = r.get(10).unwrap_or_else(|_| "[]".into());
+        let facils_json: String     = r.get(11).unwrap_or_else(|_| "[]".into());
+        let topics: Vec<String>     = serde_json::from_str(&topics_json).unwrap_or_default();
+        let facilitators: Vec<String> = serde_json::from_str(&facils_json).unwrap_or_default();
+        Ok(EventSession {
+            id: r.get(0)?, event_id: r.get(1)?, session_no: r.get(2)?,
+            title: r.get(3)?, date: r.get(4)?, start_time: r.get(5)?,
+            end_time: r.get(6)?, region: r.get(7)?, venue: r.get(8)?,
+            participant_count: r.get(9)?,
+            topics, facilitators,
+        })
+    }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     Ok(sessions)
@@ -287,12 +300,17 @@ pub fn create_session(
     let id  = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
 
+    let topics_json = serde_json::to_string(&input.topics.unwrap_or_default()).unwrap_or_else(|_| "[]".into());
+    let facils_json = serde_json::to_string(&input.facilitators.unwrap_or_default()).unwrap_or_else(|_| "[]".into());
+
     conn.execute(
         r#"INSERT INTO event_sessions
-           (id, event_id, session_no, title, date, start_time, end_time, region, venue, created_at)
-           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"#,
+           (id, event_id, session_no, title, date, start_time, end_time, region, venue,
+            topics_json, facilitators_json, created_at)
+           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)"#,
         params![id, input.event_id, next_no, input.title, input.date,
-                input.start_time, input.end_time, input.region, input.venue, now],
+                input.start_time, input.end_time, input.region, input.venue,
+                topics_json, facils_json, now],
     ).map_err(|e| e.to_string())?;
 
     let (actor_id, actor_name) = session_actor(&auth);
@@ -305,7 +323,46 @@ pub fn create_session(
         title: input.title, date: input.date, start_time: input.start_time,
         end_time: input.end_time, region: input.region, venue: input.venue,
         participant_count: Some(0),
+        topics: serde_json::from_str(&topics_json).unwrap_or_default(),
+        facilitators: serde_json::from_str(&facils_json).unwrap_or_default(),
     })
+}
+
+#[tauri::command]
+pub fn update_session(
+    state: State<'_, AppDataDir>,
+    auth: State<'_, AuthState>,
+    session_id: String,
+    title: Option<String>,
+    date: String,
+    start_time: Option<String>,
+    end_time: Option<String>,
+    region: Option<String>,
+    venue: Option<String>,
+    topics: Option<Vec<String>>,
+    facilitators: Option<Vec<String>>,
+) -> Result<bool, String> {
+    require_admin(&auth)?;
+    let conn = open(&state.0).map_err(|e| e.to_string())?;
+
+    let topics_json = serde_json::to_string(&topics.unwrap_or_default()).unwrap_or_else(|_| "[]".into());
+    let facils_json = serde_json::to_string(&facilitators.unwrap_or_default()).unwrap_or_else(|_| "[]".into());
+
+    let rows = conn.execute(
+        r#"UPDATE event_sessions SET
+             title=?1, date=?2, start_time=?3, end_time=?4,
+             region=?5, venue=?6, topics_json=?7, facilitators_json=?8
+           WHERE id=?9"#,
+        params![title, date, start_time, end_time, region, venue,
+                topics_json, facils_json, session_id],
+    ).map_err(|e| e.to_string())?;
+
+    if rows > 0 {
+        let (actor_id, actor_name) = session_actor(&auth);
+        write_log(&state.0, actor_id.as_deref(), actor_name.as_deref(),
+            "session.update", "event", Some(&session_id), None, None);
+    }
+    Ok(rows > 0)
 }
 
 #[tauri::command]

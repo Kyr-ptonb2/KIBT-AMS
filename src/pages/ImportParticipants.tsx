@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { getEvents, getEventSessions, importParticipants, checkDuplicates } from "../hooks/useTauri";
-import { BUSINESS_TYPES, KIBT_REGIONS, ParticipantInput, DuplicateCheckResult } from "../types";
+import { ParticipantInput, DuplicateCheckResult } from "../types";
 import PageHeader from "../components/PageHeader";
 
 // ── Column mapping helpers ─────────────────────────────────────────────────────
@@ -57,15 +57,7 @@ function normaliseValue(field: keyof ParticipantInput, raw: string): string {
     case "consent":
       if (/^y|^1|signed|yes/i.test(v)) return "Yes";
       return "No";
-    case "businessType": {
-      const l = v.toLowerCase();
-      if (l.includes("sole") || l.includes("prop")) return "Sole proprietor";
-      if (l.includes("partner")) return "Partnership";
-      if (l.includes("limited") || l.includes("ltd")) return "Limited company";
-      if (l.includes("coop")) return "Cooperative";
-      if (l.includes("assoc")) return "Association";
-      return v;
-    }
+    case "businessType": return v; // free text
     default: return v;
   }
 }
@@ -533,23 +525,21 @@ export default function ImportParticipants() {
                         <tr key={i} className={`hover:bg-gray-50 ${!row._valid ? "opacity-40 line-through" : ""} ${row._skip ? "opacity-50" : ""}`}>
                           <td className="py-1.5 pr-2">
                             {isDup && !row._skip && (
-                              <AlertCircle size={12} className="text-amber-500" title="Possible duplicate" />
+                              <span title="Possible duplicate"><AlertCircle size={12} className="text-amber-500" /></span>
                             )}
                             {row._skip && (
-                              <X size={12} className="text-gray-400" title="Will be skipped" />
+                              <span title="Will be skipped"><X size={12} className="text-gray-400" /></span>
                             )}
                           </td>
                           <td className="py-1.5 pr-3 text-gray-400">{row._rowIndex}</td>
                           <td className="py-1.5 pr-3 font-medium text-gray-800">{row.name}</td>
                           <td className="py-1.5 pr-3 text-gray-600">
-                            <select className="table-cell-edit text-xs"
+                            <input className="table-cell-edit text-xs"
+                              placeholder="Business type"
                               value={row.businessType ?? ""}
                               onChange={e => setMappedRows(prev => prev.map((r, ri) =>
                                 ri === i ? {...r, businessType: e.target.value || undefined} : r
-                              ))}>
-                              <option value="">—</option>
-                              {BUSINESS_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
-                            </select>
+                              ))} />
                           </td>
                           <td className="py-1.5 pr-3">
                             <select className="table-cell-edit text-xs"

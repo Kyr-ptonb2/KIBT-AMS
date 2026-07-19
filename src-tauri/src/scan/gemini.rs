@@ -5,10 +5,14 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use serde_json::Value;
-use std::process::Command;
 
 const GEMINI_URL: &str =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent";
+
+/// Alternate model — used as last-resort fallback if the primary model is
+/// unavailable (e.g. deprecated, region-restricted, or experiencing an outage).
+const GEMINI_URL_ALT: &str =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 /// Result from Gemini: extracted rows + detected column names
 pub struct GeminiScanResult {
@@ -16,7 +20,7 @@ pub struct GeminiScanResult {
     pub detected_columns: Vec<String>,
 }
 
-const EXTRACTION_PROMPT: &str = r#"You are extracting attendance data from a Kenya Institute of Business Training (KIBT) attendance register photograph.
+pub const EXTRACTION_PROMPT: &str = r#"You are extracting attendance data from a Kenya Institute of Business Training (KIBT) attendance register photograph.
 
 STEP 1 — DETECT COLUMNS: Look at the header row and identify EXACTLY which columns exist. Common columns include:
 - "Participants' Full Name" or "Name"
@@ -78,6 +82,23 @@ pub async fn scan_with_gemini(
     image_bytes: &[u8],
     api_key: &str,
 ) -> Result<GeminiScanResult> {
+    scan_with_gemini_url(image_bytes, api_key, GEMINI_URL).await
+}
+
+/// Same extraction pipeline but against the alternate model — used only when
+/// the primary model fails (rate limit, outage, or deprecation).
+pub async fn scan_with_gemini_alt_model(
+    image_bytes: &[u8],
+    api_key: &str,
+) -> Result<GeminiScanResult> {
+    scan_with_gemini_url(image_bytes, api_key, GEMINI_URL_ALT).await
+}
+
+async fn scan_with_gemini_url(
+    image_bytes: &[u8],
+    api_key: &str,
+    model_url: &str,
+) -> Result<GeminiScanResult> {
     let mime = detect_mime(image_bytes);
     let b64  = STANDARD.encode(image_bytes);
 
@@ -89,54 +110,14 @@ pub async fn scan_with_gemini(
     };
 
     let json_body = serde_json::to_string(&body)?;
+    let url = format!("{}?key={}", model_url, api_key);
 
-    // Write to temp file (avoids shell escaping of large base64)
-    let tmp = std::env::temp_dir().join(format!("kibt_req_{}.json", uuid::Uuid::new_v4()));
-    std::fs::write(&tmp, &json_body)?;
-
-    let url = format!("{}?key={}", GEMINI_URL, api_key);
-
-    // Find system CA bundle
-    let ca = [
-        "/etc/ssl/certs/ca-certificates.crt",
-        "/etc/pki/tls/certs/ca-bundle.crt",
-        "/etc/ssl/ca-bundle.pem",
-        "/usr/share/ca-certificates/ca-bundle.crt",
-    ].iter().find(|p| std::path::Path::new(p).exists()).copied();
-
-    let mut args: Vec<String> = vec![
-        "--silent".into(), "--fail-with-body".into(),
-        "--max-time".into(), "60".into(),
-        "-X".into(), "POST".into(),
-        "-H".into(), "Content-Type: application/json".into(),
-        "--data".into(), format!("@{}", tmp.to_string_lossy()),
-    ];
-    if let Some(ca_path) = ca {
-        args.push("--cacert".into());
-        args.push(ca_path.into());
-    }
-    args.push(url);
-
-    let output = Command::new("curl").args(&args).output()
-        .context("curl not found. Install: sudo pacman -S curl")?;
-
-    let _ = std::fs::remove_file(&tmp);
-
-    let response = String::from_utf8_lossy(&output.stdout).to_string();
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if let Ok(v) = serde_json::from_str::<Value>(&response) {
-            if let Some(msg) = v.pointer("/error/message").and_then(Value::as_str) {
-                anyhow::bail!("Gemini API: {}", msg);
-            }
-        }
-        anyhow::bail!("curl error ({}): {}", output.status, stderr.trim());
-    }
-
-    if response.is_empty() {
-        anyhow::bail!("Empty response from Gemini");
-    }
+    let response = super::http::post_json(
+        url,
+        vec![("Content-Type".to_string(), "application/json".to_string())],
+        json_body,
+        60,
+    ).await.map_err(|e| anyhow!("Gemini API: {}", e))?;
 
     let envelope: Value = serde_json::from_str(&response)
         .context("Failed to parse Gemini response")?;
@@ -156,7 +137,7 @@ pub async fn scan_with_gemini(
     parse_output(clean)
 }
 
-fn parse_output(json_str: &str) -> Result<GeminiScanResult> {
+pub fn parse_output(json_str: &str) -> Result<GeminiScanResult> {
     let start = json_str.find('{').ok_or_else(|| anyhow!("No JSON object in response"))?;
     let end   = json_str.rfind('}').ok_or_else(|| anyhow!("No closing }} in response"))?;
     let v: Value = serde_json::from_str(&json_str[start..=end])
@@ -197,8 +178,24 @@ fn parse_output(json_str: &str) -> Result<GeminiScanResult> {
                                .filter(|s| s == "M" || s == "F"),
             phone:         str_field(item, "phone"),
             id_number:     str_field(item, "idNumber"),
-            consent:       str_field(item, "consent")
-                               .map(|s| if s.to_lowercase().starts_with('y') { "Yes".into() } else { "No".into() }),
+            consent:       {
+                // Only set consent if the column actually existed on the sheet.
+                // Absent/null → None so downstream doesn't falsely show "No".
+                let raw = item.get("consent");
+                match raw {
+                    Some(serde_json::Value::Null) | None => None,
+                    Some(v) => {
+                        let s = v.as_str().unwrap_or("").trim().to_lowercase();
+                        if s.is_empty() || s == "null" {
+                            None  // column present but blank = no consent recorded
+                        } else if s.starts_with('y') || s.contains("sign") || s.contains("yes") {
+                            Some("Yes".to_string())
+                        } else {
+                            Some("No".to_string())
+                        }
+                    }
+                }
+            },
             location:      str_field(item, "location"),
             extra_fields:  extra,
         });
@@ -215,14 +212,14 @@ fn str_field(v: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn strip_fences(s: &str) -> &str {
+pub fn strip_fences(s: &str) -> &str {
     let s = s.trim();
     if let Some(x) = s.strip_prefix("```json") { x.strip_suffix("```").unwrap_or(x).trim() }
     else if let Some(x) = s.strip_prefix("```") { x.strip_suffix("```").unwrap_or(x).trim() }
     else { s }
 }
 
-fn detect_mime(bytes: &[u8]) -> &'static str {
+pub fn detect_mime(bytes: &[u8]) -> &'static str {
     if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) { "image/jpeg" }
     else if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) { "image/png" }
     else { "image/jpeg" }

@@ -105,6 +105,7 @@ pub fn save_participants(
     state: State<'_, AppDataDir>,
     auth: State<'_, AuthState>,
     event_id: String,
+    session_id: Option<String>,
     rows: Vec<ParticipantInput>,
 ) -> Result<usize, String> {
     let mut conn = open(&state.0).map_err(|e| e.to_string())?;
@@ -112,15 +113,18 @@ pub fn save_participants(
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut saved = 0usize;
 
+    // Treat an empty string the same as "no session selected"
+    let session_id = session_id.filter(|s| !s.trim().is_empty());
+
     for row in &rows {
         if row.name.trim().is_empty() { continue; }
         let id = Uuid::new_v4().to_string();
         tx.execute(
             r#"INSERT INTO participants
-               (id, event_id, name, business_type, age_category, gender, phone,
+               (id, event_id, session_id, name, business_type, age_category, gender, phone,
                 consent, location, extra_fields, id_number, added_at)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)"#,
-            params![id, event_id, row.name.trim(), row.business_type, row.age_category,
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)"#,
+            params![id, event_id, session_id, row.name.trim(), row.business_type, row.age_category,
                     row.gender, row.phone, row.consent, row.location, row.extra_fields,
                     row.id_number, now],
         ).map_err(|e| e.to_string())?;
@@ -224,6 +228,12 @@ pub fn import_participants(
     }
 
     tx.commit().map_err(|e| e.to_string())?;
+
+    // Refresh query-planner statistics after a meaningful bulk insert —
+    // reuses the already-open connection rather than opening a new one.
+    if saved >= 20 {
+        let _ = conn.execute_batch("PRAGMA optimize;");
+    }
 
     let (actor_id, actor_name) = session_actor(&auth);
     write_log(&state.0, actor_id.as_deref(), actor_name.as_deref(),

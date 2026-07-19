@@ -1,6 +1,6 @@
 [package]
 name = "kibt-ams"
-version = "2.0.0"
+version = "2.6.0"
 description = "KIBT Attendance Management System"
 authors = ["KIBT ICT Department"]
 edition = "2021"
@@ -20,6 +20,7 @@ tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Serialisation
 serde = { version = "1", features = ["derive"] }
@@ -45,6 +46,9 @@ keyring = { version = "2", features = ["default"] }
 
 # Excel export (pure Rust — no native libs required)
 rust_xlsxwriter = "0.79"
+
+# Compression for sync packages
+flate2 = "1"
 
 [features]
 default = []

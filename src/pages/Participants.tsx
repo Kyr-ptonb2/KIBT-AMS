@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Pencil, Trash2, Check, X, Users, Filter } from "lucide-react";
+import { Search, Pencil, Trash2, Check, X, Users, Filter, ChevronDown, ChevronRight, MapPin } from "lucide-react";
 import { useStore } from "../store";
 import { getParticipants, updateParticipant, deleteParticipant } from "../hooks/useTauri";
-import { Participant, ParticipantInput, KIBT_REGIONS, BUSINESS_TYPES } from "../types";
+import { Participant, ParticipantInput, KIBT_REGIONS } from "../types";
 import PageHeader from "../components/PageHeader";
 import ConfirmDialog from "../components/ConfirmDialog";
+
+const UNSPECIFIED_REGION = "Unspecified Region";
 
 export default function Participants() {
   const { selectedFY, addToast, currentUser } = useStore();
@@ -21,6 +23,7 @@ export default function Participants() {
   const [showFilters, setShowFilters] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingDeleteName, setPendingDeleteName] = useState<string>("");
+  const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
 
   // Debounce the search query — wait 350ms after last keystroke before fetching
   const [debouncedQuery, setDebouncedQuery] = useState(query);
@@ -43,6 +46,32 @@ export default function Participants() {
     staleTime: 2 * 60_000, // 2 minutes
     gcTime: 10 * 60_000,   // 10 minutes
   });
+
+  // Group the (already server-filtered, single-FY) results by region for
+  // easier scanning — a flat list of hundreds of rows is hard to navigate.
+  const regionGroups = useMemo(() => {
+    if (!participants) return [];
+    const map = new Map<string, Participant[]>();
+    for (const p of participants) {
+      const key = p.region?.trim() || UNSPECIFIED_REGION;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => {
+        if (a === UNSPECIFIED_REGION) return 1;
+        if (b === UNSPECIFIED_REGION) return -1;
+        return a.localeCompare(b);
+      });
+  }, [participants]);
+
+  const toggleRegion = (region: string) => {
+    setCollapsedRegions((prev) => {
+      const next = new Set(prev);
+      if (next.has(region)) next.delete(region); else next.add(region);
+      return next;
+    });
+  };
 
   const updateMut = useMutation({
     mutationFn: ({ id, input }: { id: string; input: ParticipantInput }) =>
@@ -92,6 +121,7 @@ export default function Participants() {
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500">
               {participants?.length ?? 0} records
+              {regionGroups.length > 1 && ` · ${regionGroups.length} regions`}
             </span>
           </div>
         }
@@ -159,52 +189,72 @@ export default function Participants() {
           )}
         </div>
 
-        {/* ── Table ─────────────────────────────────────────────────── */}
-        <div className="card overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-40 text-gray-400 text-sm">Loading…</div>
-          ) : !participants || participants.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <Users size={36} className="mb-3 text-gray-200" />
-              <p className="text-sm">No participants found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr className="text-left text-xs text-gray-500">
-                    <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-3 py-3 font-medium">Business Type</th>
-                    <th className="px-3 py-3 font-medium w-16">Age</th>
-                    <th className="px-3 py-3 font-medium w-16">Gender</th>
-                    <th className="px-3 py-3 font-medium">Phone</th>
-                    <th className="px-3 py-3 font-medium">Region</th>
-                    <th className="px-3 py-3 font-medium w-16">Consent</th>
-                    <th className="px-3 py-3 font-medium w-24">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {participants.map((p) => (
-                    <ParticipantRow
-                      key={p.id}
-                      participant={p}
-                      isEditing={editId === p.id}
-                      editData={editId === p.id ? editData : null}
-                      onEdit={() => startEdit(p)}
-                      onSave={commitEdit}
-                      onCancel={() => { setEditId(null); setEditData(null); }}
-                      onDelete={() => { setPendingDeleteId(p.id); setPendingDeleteName(p.name); }}
-                      canDelete={currentUser?.role === "admin" || currentUser?.role === "super_admin"}
-                      onFieldChange={(field, value) =>
-                        setEditData((prev) => prev ? { ...prev, [field]: value } : prev)
-                      }
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* ── Region-grouped tables ─────────────────────────────────── */}
+        {isLoading ? (
+          <div className="card flex items-center justify-center h-40 text-gray-400 text-sm">Loading…</div>
+        ) : regionGroups.length === 0 ? (
+          <div className="card flex flex-col items-center justify-center py-16 text-gray-400">
+            <Users size={36} className="mb-3 text-gray-200" />
+            <p className="text-sm">No participants found</p>
+          </div>
+        ) : (
+          regionGroups.map(([region, rows]) => {
+            const collapsed = collapsedRegions.has(region);
+            return (
+              <div key={region} className="card overflow-hidden">
+                <button
+                  onClick={() => toggleRegion(region)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors border-b border-gray-100"
+                >
+                  <div className="flex items-center gap-2">
+                    {collapsed ? <ChevronRight size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
+                    <MapPin size={13} className="text-kibt-green" />
+                    <span className="text-sm font-semibold text-gray-800">{region}</span>
+                  </div>
+                  <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">
+                    {rows.length} participant{rows.length !== 1 ? "s" : ""}
+                  </span>
+                </button>
+
+                {!collapsed && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50/50 border-b border-gray-100">
+                        <tr className="text-left text-xs text-gray-500">
+                          <th className="px-4 py-2.5 font-medium">Name</th>
+                          <th className="px-3 py-2.5 font-medium">Business Type</th>
+                          <th className="px-3 py-2.5 font-medium w-16">Age</th>
+                          <th className="px-3 py-2.5 font-medium w-16">Gender</th>
+                          <th className="px-3 py-2.5 font-medium">Phone</th>
+                          <th className="px-3 py-2.5 font-medium w-16">Consent</th>
+                          <th className="px-3 py-2.5 font-medium w-24">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {rows.map((p) => (
+                          <ParticipantRow
+                            key={p.id}
+                            participant={p}
+                            isEditing={editId === p.id}
+                            editData={editId === p.id ? editData : null}
+                            onEdit={() => startEdit(p)}
+                            onSave={commitEdit}
+                            onCancel={() => { setEditId(null); setEditData(null); }}
+                            onDelete={() => { setPendingDeleteId(p.id); setPendingDeleteName(p.name); }}
+                            canDelete={currentUser?.role === "admin" || currentUser?.role === "super_admin"}
+                            onFieldChange={(field, value) =>
+                              setEditData((prev) => prev ? { ...prev, [field]: value } : prev)
+                            }
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
       <ConfirmDialog
         isOpen={!!pendingDeleteId}
@@ -244,10 +294,7 @@ function ParticipantRow({
           <input className="input text-xs" value={editData.name} onChange={(e) => onFieldChange("name", e.target.value)} />
         </td>
         <td className="px-3 py-2">
-          <select className="select text-xs" value={editData.businessType ?? ""} onChange={(e) => onFieldChange("businessType", e.target.value)}>
-            <option value="">—</option>
-            {BUSINESS_TYPES.map((bt) => <option key={bt} value={bt}>{bt}</option>)}
-          </select>
+          <input className="input text-xs py-1" placeholder="e.g. Sole proprietor" value={editData.businessType ?? ""} onChange={(e) => onFieldChange("businessType", e.target.value)} />
         </td>
         <td className="px-3 py-2">
           <select className="select text-xs" value={editData.ageCategory ?? ""} onChange={(e) => onFieldChange("ageCategory", e.target.value)}>
@@ -301,7 +348,6 @@ function ParticipantRow({
         ) : <span className="text-gray-300">—</span>}
       </td>
       <td className="px-3 py-2.5 text-gray-600 font-mono text-xs">{p.phone ?? <span className="text-gray-300 font-sans">—</span>}</td>
-      <td className="px-3 py-2.5 text-xs text-gray-600">{p.region ?? <span className="text-gray-300">—</span>}</td>
       <td className="px-3 py-2.5 text-center">
         <span className={`text-xs font-medium ${p.consent === "Yes" ? "text-green-600" : "text-gray-400"}`}>
           {p.consent ?? "No"}

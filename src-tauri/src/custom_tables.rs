@@ -583,8 +583,7 @@ fn csv_escape(s: &str) -> String {
 // Only maps to EXISTING columns — no new columns are ever created.
 // Unrecognised detected columns are ignored silently.
 
-use crate::scan::gemini;
-use crate::scan::{get_gemini_key, save_scan_record, friendly_api_error};
+use crate::scan::{save_scan_record, scan_with_fallback};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -651,18 +650,13 @@ pub async fn scan_into_custom_table(
     let app_data_dir = state.0.clone();
     let def = get_custom_table(state.clone(), input.table_id.clone())?;
 
-    let gemini_key = get_gemini_key()
-        .map_err(|_| "Gemini API key not configured. Set it in Settings.".to_string())?;
-
-    let scan_result = gemini::scan_with_gemini(&input.image_bytes, &gemini_key)
-        .await
-        .map_err(|e| friendly_api_error(&e.to_string()))?;
+    let (scan_result, method_used, fallback_note) = scan_with_fallback(&input.image_bytes).await?;
 
     let cols_json = serde_json::to_string(&scan_result.detected_columns).ok();
     let scan_id = save_scan_record(
         &app_data_dir, &def.id, None, None,
-        &input.image_bytes, &input.filename, "gemini",
-        scan_result.rows.len(), &None, cols_json.as_deref(),
+        &input.image_bytes, &input.filename, &method_used,
+        scan_result.rows.len(), &fallback_note, cols_json.as_deref(),
     ).map_err(|e| e.to_string())?;
 
     let mapping = build_col_mapping(&scan_result.detected_columns, &def.columns);
@@ -696,17 +690,14 @@ pub async fn scan_batch_into_custom_table(
     let batch_id = Uuid::new_v4().to_string();
     let def = get_custom_table(state.clone(), input.table_id.clone())?;
 
-    let gemini_key = get_gemini_key()
-        .map_err(|_| "Gemini API key not configured.".to_string())?;
-
     let total = input.items.len();
-    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+    // 2 concurrent workers — see scan/batch.rs for rationale.
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(2));
     let rl  = std::sync::Arc::new(tokio::sync::Mutex::new(std::time::Instant::now()));
     let mut handles = Vec::new();
 
     for (index, item) in input.items.into_iter().enumerate() {
         let app_data_c = app_data_dir.clone();
-        let key_c      = gemini_key.clone();
         let def_c      = def.clone();
         let session_c  = session.clone();
         let sem_c      = sem.clone();
@@ -731,14 +722,14 @@ pub async fn scan_batch_into_custom_table(
                 "status": "processing", "filename": item.filename,
             }));
 
-            match gemini::scan_with_gemini(&item.image_bytes, &key_c).await {
-                Ok(scan_result) => {
+            match scan_with_fallback(&item.image_bytes).await {
+                Ok((scan_result, method_used, fallback_note)) => {
                     let cols_json = serde_json::to_string(&scan_result.detected_columns).ok();
                     let _ = save_scan_record(
                         &app_data_c, &def_c.id, Some(&bid),
                         Some((index + 1) as i32), &item.image_bytes,
-                        &item.filename, "gemini", scan_result.rows.len(),
-                        &None, cols_json.as_deref(),
+                        &item.filename, &method_used, scan_result.rows.len(),
+                        &fallback_note, cols_json.as_deref(),
                     );
 
                     let mapping = build_col_mapping(&scan_result.detected_columns, &def_c.columns);
@@ -756,17 +747,17 @@ pub async fn scan_batch_into_custom_table(
                         "batchId": bid, "itemId": item.item_id,
                         "index": index, "total": total, "status": "done",
                         "filename": item.filename, "rowsInserted": inserted,
+                        "method": method_used,
                     }));
 
                     Some(TableBatchItemResult {
                         item_id: item.item_id, filename: item.filename,
                         status: "done".into(), rows_inserted: inserted,
                         matched_columns: matched, skipped_columns: skipped,
-                        error: None,
+                        error: fallback_note,
                     })
                 }
-                Err(e) => {
-                    let msg = friendly_api_error(&e.to_string());
+                Err(msg) => {
                     let _ = ah_c.emit("table_scan_progress", serde_json::json!({
                         "batchId": bid, "itemId": item.item_id,
                         "index": index, "total": total,

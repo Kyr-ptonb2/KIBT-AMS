@@ -20,8 +20,12 @@ pub fn open(app_data_dir: &Path) -> Result<Connection> {
         PRAGMA temp_store     = MEMORY;    -- temp tables in RAM, not on disk
         PRAGMA mmap_size      = 67108864;  -- 64 MB memory-mapped I/O
         PRAGMA busy_timeout   = 5000;      -- wait up to 5 s instead of immediate error
-        PRAGMA optimize;                   -- update query-planner statistics
     "#)?;
+    // NOTE: PRAGMA optimize deliberately NOT run here — this function is
+    // called on every single Tauri command (dozens of times per session).
+    // optimize() re-gathers query-planner statistics, which is real CPU work
+    // with no benefit when run repeatedly. It's run once at startup instead
+    // (see init()) which is when it actually matters.
     Ok(conn)
 }
 
@@ -33,6 +37,9 @@ pub fn init(app_data_dir: &Path) -> Result<()> {
     create_indices(&conn)?;
     crate::custom_tables::init_custom_tables(&conn)?;
     seed_regions(&conn)?;
+    // Refresh query-planner statistics once at startup (not on every command —
+    // see comment on open()). Non-fatal if it fails.
+    let _ = conn.execute_batch("PRAGMA optimize;");
     Ok(())
 }
 
@@ -60,7 +67,9 @@ CREATE TABLE IF NOT EXISTS event_sessions (
     end_time    TEXT,
     region      TEXT,
     venue       TEXT,
-    created_at  TEXT NOT NULL
+    created_at  TEXT NOT NULL,
+    topics_json      TEXT NOT NULL DEFAULT '[]',
+    facilitators_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS participants (
@@ -193,6 +202,18 @@ fn migrate(conn: &Connection) -> Result<()> {
 }
 
 fn create_indices(conn: &Connection) -> Result<()> {
+    // Add topics/facilitators columns to existing event_sessions tables
+    // (safe no-op if columns already exist — errors are ignored)
+    for col in &[
+        ("topics_json",       "TEXT NOT NULL DEFAULT '[]'"),
+        ("facilitators_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ] {
+        let _ = conn.execute_batch(&format!(
+            "ALTER TABLE event_sessions ADD COLUMN {} {};",
+            col.0, col.1
+        ));
+    }
+
     conn.execute_batch(r#"
         CREATE INDEX IF NOT EXISTS idx_participants_event_id   ON participants(event_id);
         CREATE INDEX IF NOT EXISTS idx_participants_session_id  ON participants(session_id);

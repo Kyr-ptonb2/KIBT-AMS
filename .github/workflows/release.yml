@@ -1,0 +1,55 @@
+name: Build & Release Windows Installer
+
+# Triggers on a version tag push, e.g.:
+#   git tag v2.7.0
+#   git push origin v2.7.0
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:   # also allows manual trigger from the GitHub Actions tab
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build, sign, and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Private key used to SIGN the update artifacts.
+          # Set this in: Repo → Settings → Secrets and variables → Actions
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "KIBT-AMS ${{ github.ref_name }}"
+          releaseBody: |
+            See the commit history for what changed in this release.
+            Existing installations will detect this update automatically
+            (or via Settings → Check for Updates) within 60 seconds of
+            launching the app while online.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true   # generates latest.json for the updater endpoint
