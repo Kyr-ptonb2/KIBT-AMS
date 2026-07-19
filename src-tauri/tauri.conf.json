@@ -56,7 +56,8 @@
       "endpoints": [
         "https://github.com/Kyr-ptonb2/KIBT-AMS/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_WITH_YOUR_PUBLIC_KEY_FROM_STEP_1"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVEREUxOTkzOTRCQTg0OEIKUldTTGhMcVVreG5lWFJGUFdvVTM0MVNXYVZxRzFwc1ZsWXpEdjBwa0h4M0dHZVNWR08wdFI3K2cK
+"
     }
   }
 }
