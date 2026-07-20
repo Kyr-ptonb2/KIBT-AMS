@@ -8,7 +8,8 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:   # also allows manual trigger from the GitHub Actions tab
-
+permissions:
+    contents: write
 jobs:
   build-and-release:
     runs-on: windows-latest
