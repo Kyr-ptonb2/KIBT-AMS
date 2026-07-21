@@ -65,6 +65,18 @@ export default function Participants() {
       });
   }, [participants]);
 
+  // Display-only sequential numbers (#1, #2, ...) that continue across region
+  // groups in the same order the groups/rows are rendered. Not stored anywhere —
+  // purely for on-screen/report readability.
+  const rowNumbers = useMemo(() => {
+    const map = new Map<string, number>();
+    let n = 1;
+    for (const [, rows] of regionGroups) {
+      for (const p of rows) map.set(p.id, n++);
+    }
+    return map;
+  }, [regionGroups]);
+
   const toggleRegion = (region: string) => {
     setCollapsedRegions((prev) => {
       const next = new Set(prev);
@@ -221,6 +233,7 @@ export default function Participants() {
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50/50 border-b border-gray-100">
                         <tr className="text-left text-xs text-gray-500">
+                          <th className="px-3 py-2.5 font-medium w-10">#</th>
                           <th className="px-4 py-2.5 font-medium">Name</th>
                           <th className="px-3 py-2.5 font-medium">Business Type</th>
                           <th className="px-3 py-2.5 font-medium w-16">Age</th>
@@ -234,6 +247,7 @@ export default function Participants() {
                         {rows.map((p) => (
                           <ParticipantRow
                             key={p.id}
+                            rowNumber={rowNumbers.get(p.id) ?? 0}
                             participant={p}
                             isEditing={editId === p.id}
                             editData={editId === p.id ? editData : null}
@@ -274,10 +288,11 @@ export default function Participants() {
 }
 
 function ParticipantRow({
-  participant: p, isEditing, editData,
+  participant: p, rowNumber, isEditing, editData,
   onEdit, onSave, onCancel, onDelete, onFieldChange, canDelete,
 }: {
   participant: Participant;
+  rowNumber: number;
   isEditing: boolean;
   editData: ParticipantInput | null;
   onEdit: () => void;
@@ -290,6 +305,7 @@ function ParticipantRow({
   if (isEditing && editData) {
     return (
       <tr className="bg-green-50/50">
+        <td className="px-3 py-2 text-xs text-gray-400 font-mono">{rowNumber}</td>
         <td className="px-4 py-2">
           <input className="input text-xs" value={editData.name} onChange={(e) => onFieldChange("name", e.target.value)} />
         </td>
@@ -331,6 +347,7 @@ function ParticipantRow({
 
   return (
     <tr className="hover:bg-gray-50">
+      <td className="px-3 py-2.5 text-xs text-gray-400 font-mono">{rowNumber}</td>
       <td className="px-4 py-2.5 font-medium text-gray-800">{p.name}</td>
       <td className="px-3 py-2.5 text-gray-600">{p.businessType ?? <span className="text-gray-300">—</span>}</td>
       <td className="px-3 py-2.5 text-center">

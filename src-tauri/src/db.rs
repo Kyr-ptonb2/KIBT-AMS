@@ -198,6 +198,40 @@ fn migrate(conn: &Connection) -> Result<()> {
         }
     }
 
+    // ── BUSINESS TYPE NORMALIZATION ────────────────────────────────────────────
+    //
+    // Older data has free-text business_type values that differ only in case or
+    // stray whitespace (e.g. "Sole proprietor" vs "sole proprietor"), which
+    // splits them into separate rows in reports. Collapse every distinct raw
+    // value down to its normalized form (title case, single spaces) so records
+    // that mean the same thing merge together. Safe to re-run: once normalized,
+    // a value already equals its own normalized form and is skipped.
+    {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT business_type FROM participants
+             WHERE business_type IS NOT NULL AND TRIM(business_type) != ''"
+        )?;
+        let raw_values: Vec<String> = stmt.query_map([], |r| r.get::<_, String>(0))?
+            .filter_map(|r| r.ok()).collect();
+
+        let mut normalized_count = 0usize;
+        for raw in raw_values {
+            if let Some(normalized) = crate::participants::normalize_business_type(&raw) {
+                if normalized != raw {
+                    let updated = conn.execute(
+                        "UPDATE participants SET business_type = ?1 WHERE business_type = ?2",
+                        params![normalized, raw],
+                    ).unwrap_or(0);
+                    normalized_count += updated;
+                }
+            }
+        }
+        if normalized_count > 0 {
+            eprintln!("[db/migrate] normalized business_type on {} row(s)", normalized_count);
+        }
+    }
+    // ── END BUSINESS TYPE NORMALIZATION ───────────────────────────────────────
+
     Ok(())
 }
 
