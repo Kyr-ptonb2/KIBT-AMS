@@ -15,10 +15,6 @@ jobs:
     permissions:
       contents: write
 
-  permissions:
-    contents: write
-
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
