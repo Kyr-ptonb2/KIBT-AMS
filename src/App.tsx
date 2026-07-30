@@ -51,13 +51,18 @@ export default function App() {
     currentUser, setCurrentUser,
     setIsOnline, setConfig,
     setFinancialYears, selectedFY, setSelectedFY,
-    theme, addToast,
+    theme, fontScale, addToast,
   } = useStore();
 
   // Apply saved theme on startup
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
+
+  // Apply saved text size on startup
+  useEffect(() => {
+    document.documentElement.setAttribute("data-font-scale", fontScale);
+  }, [fontScale]);
 
   // Restore session on startup
   useEffect(() => {

@@ -52,7 +52,15 @@
   }
 
   /* ── Base resets ─────────────────────────────────────── */
+  /* Text is selectable/copyable by default everywhere — tables, reports,
+     participant lists, etc. Only interactive chrome (buttons, nav links,
+     icons, dropdowns) stays non-selectable so a click-drag on a control
+     doesn't accidentally highlight its label. */
   * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  button, a, svg, select, [role="button"] {
     -webkit-user-select: none;
     user-select: none;
   }
@@ -73,6 +81,15 @@
                  'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
+
+  /* ── Text size preference ────────────────────────────────
+     Tailwind's text-* utilities are all rem-based, so scaling
+     the root font-size scales every label, table, and button
+     in the app proportionally. */
+  html, [data-font-scale="md"] { font-size: 16px; }
+  [data-font-scale="sm"] { font-size: 14px; }
+  [data-font-scale="lg"] { font-size: 18px; }
+  [data-font-scale="xl"] { font-size: 20px; }
 
   /* ── Dark mode — override hardcoded Tailwind colours ──── */
   /* Every bg-white, bg-gray-50 etc becomes dark in dark mode */

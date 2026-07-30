@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Users, Calendar, MapPin, UserCheck } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { Users, Calendar, MapPin, UserCheck, FileSpreadsheet, FileText } from "lucide-react";
 import { useStore } from "../store";
-import { getReport } from "../hooks/useTauri";
+import { getReport, exportReportExcel, exportReportCsv } from "../hooks/useTauri";
 import PageHeader from "../components/PageHeader";
 
 export default function Reports() {
-  const { selectedFY } = useStore();
+  const { selectedFY, addToast } = useStore();
+  const [exporting, setExporting] = useState<"excel" | "csv" | null>(null);
 
   const { data: report, isLoading } = useQuery({
     queryKey: ["report", selectedFY],
@@ -14,6 +16,41 @@ export default function Reports() {
     staleTime: 5 * 60_000, // 5 minutes — reports are aggregations
     gcTime: 15 * 60_000,   // 15 minutes
   });
+
+  const handleExportReport = async (format: "excel" | "csv") => {
+    setExporting(format);
+    try {
+      const fyLabel = selectedFY.replace("/", "-");
+      const defaultName = `KIBT_Summary_Report_${fyLabel}.${format === "excel" ? "xlsx" : "csv"}`;
+      const path = await save({
+        defaultPath: defaultName,
+        filters: format === "excel"
+          ? [{ name: "Excel", extensions: ["xlsx"] }]
+          : [{ name: "CSV",   extensions: ["csv"]  }],
+      });
+      if (!path) return;
+
+      if (format === "excel") await exportReportExcel(selectedFY, path);
+      else                    await exportReportCsv(selectedFY, path);
+
+      addToast({ type: "success", message: `Summary report exported to ${path.split(/[\\\/]/).pop()}` });
+    } catch (e: any) {
+      addToast({ type: "error", message: String(e) });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportButtons = (
+    <div className="flex gap-2">
+      <button className="btn-secondary" onClick={() => handleExportReport("excel")} disabled={exporting !== null}>
+        <FileSpreadsheet size={14} /> {exporting === "excel" ? "Exporting…" : "Export Excel"}
+      </button>
+      <button className="btn-secondary" onClick={() => handleExportReport("csv")} disabled={exporting !== null}>
+        <FileText size={14} /> {exporting === "csv" ? "Exporting…" : "Export CSV"}
+      </button>
+    </div>
+  );
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Loading report…</div>
@@ -43,6 +80,7 @@ export default function Reports() {
       <PageHeader
         title={`Annual Report — FY ${selectedFY}`}
         subtitle="Kenya Institute of Business Training — Statistical Summary"
+        actions={exportButtons}
       />
 
       <div className="px-8 py-6 space-y-6">

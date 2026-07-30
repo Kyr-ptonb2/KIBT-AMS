@@ -30,6 +30,13 @@ interface AppStore {
   theme: "light" | "dark";
   setTheme: (theme: "light" | "dark") => void;
 
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+
+  fontScale: "sm" | "md" | "lg" | "xl";
+  setFontScale: (scale: "sm" | "md" | "lg" | "xl") => void;
+
   toasts: Toast[];
   addToast: (toast: Omit<Toast, "id">) => void;
   removeToast: (id: string) => void;
@@ -66,6 +73,16 @@ export const useStore = create<AppStore>()(
         document.documentElement.setAttribute("data-theme", theme);
       },
 
+      sidebarCollapsed: false,
+      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+
+      fontScale: "md",
+      setFontScale: (scale) => {
+        set({ fontScale: scale });
+        document.documentElement.setAttribute("data-font-scale", scale);
+      },
+
       toasts: [],
       addToast: (toast) =>
         set((state) => ({ toasts: [...state.toasts, { ...toast, id: crypto.randomUUID() }] })),
@@ -74,8 +91,12 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: "kibt-ams-prefs",
-      // Only persist theme — everything else is re-fetched from backend
-      partialize: (state) => ({ theme: state.theme }),
+      // Only persist UI preferences — everything else is re-fetched from backend
+      partialize: (state) => ({
+        theme: state.theme,
+        sidebarCollapsed: state.sidebarCollapsed,
+        fontScale: state.fontScale,
+      }),
     }
   )
 );

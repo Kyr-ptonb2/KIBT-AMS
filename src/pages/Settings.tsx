@@ -6,7 +6,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import {
   Key, MapPin, Database, HardDrive, RotateCcw,
   Save, Eye, EyeOff, CheckCircle, ExternalLink, Sun, Moon, ShieldCheck,
-  Download, RefreshCw, PartyPopper
+  Download, RefreshCw, PartyPopper, Type
 } from "lucide-react";
 import { useStore } from "../store";
 import { Palette } from "lucide-react";
@@ -15,7 +15,7 @@ import { AppConfig, KIBT_REGIONS } from "../types";
 import PageHeader from "../components/PageHeader";
 
 export default function Settings() {
-  const { setConfig, addToast, theme, setTheme } = useStore();
+  const { setConfig, addToast, theme, setTheme, fontScale, setFontScale } = useStore();
   const [config, setLocalConfig] = useState<AppConfig | null>(null);
   const [showKey, setShowKey] = useState(false);
   const [showGroqKey, setShowGroqKey] = useState(false);
@@ -182,6 +182,38 @@ export default function Settings() {
             </div>
             <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
               Theme is saved automatically and persists across sessions.
+            </p>
+          </div>
+
+          <div>
+            <label className="label flex items-center gap-1.5">
+              <Type size={13} /> Text Size
+            </label>
+            <div className="grid grid-cols-4 gap-2 mt-1">
+              {([
+                { value: "sm", label: "Small",  sample: "text-xs"  },
+                { value: "md", label: "Default", sample: "text-sm" },
+                { value: "lg", label: "Large",  sample: "text-base" },
+                { value: "xl", label: "X-Large", sample: "text-lg" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setFontScale(opt.value)}
+                  className={`flex flex-col items-center justify-center gap-1 py-3 rounded-xl border-2 transition-all font-medium ${
+                    fontScale === opt.value
+                      ? "border-kibt-green bg-kibt-green/5 text-kibt-green"
+                      : "border-transparent hover:border-gray-200"
+                  }`}
+                  style={{ backgroundColor: fontScale === opt.value ? undefined : "var(--bg-muted)", color: fontScale === opt.value ? undefined : "var(--text-secondary)" }}
+                >
+                  <span className={opt.sample}>Aa</span>
+                  <span className="text-xs">{opt.label}</span>
+                  {fontScale === opt.value && <CheckCircle size={12} />}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+              Scales text and UI size across the whole app. Saved automatically.
             </p>
           </div>
         </div>

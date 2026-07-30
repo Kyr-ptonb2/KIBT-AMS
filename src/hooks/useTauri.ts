@@ -145,6 +145,15 @@ export const checkDuplicates = (rows: ParticipantInput[]) =>
 export const getReport = (financialYear: string) =>
   invoke<ReportData>("get_report", { financialYear });
 
+// Summary report export — headline totals, per-region breakdown, business
+// types, and the full event list (date/region/venue/participants).
+// Distinct from exportExcel/exportCsv below, which export raw per-participant rows.
+export const exportReportExcel = (financialYear: string, path: string) =>
+  invoke<boolean>("export_report_excel", { financialYear, path });
+
+export const exportReportCsv = (financialYear: string, path: string) =>
+  invoke<boolean>("export_report_csv", { financialYear, path });
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 export const exportExcel = (filter: ExportFilter, path: string) =>

@@ -78,6 +78,8 @@ pub fn run() {
             scan::check_connectivity,
             // Reports
             reports::get_report,
+            reports::export_report_excel,
+            reports::export_report_csv,
             // Export
             export::export_excel,
             export::export_csv,
